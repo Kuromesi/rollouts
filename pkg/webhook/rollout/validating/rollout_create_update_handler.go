@@ -125,6 +125,9 @@ func (h *RolloutCreateUpdateHandler) validateRollout(rollout *appsv1alpha1.Rollo
 }
 
 func (h *RolloutCreateUpdateHandler) validateRolloutConflict(rollout *appsv1alpha1.Rollout, path *field.Path) field.ErrorList {
+	if rollout.Spec.Disabled {
+		return nil
+	}
 	errList := field.ErrorList{}
 	rolloutList := &appsv1alpha1.RolloutList{}
 	err := h.Client.List(context.TODO(), rolloutList, client.InNamespace(rollout.Namespace), utilclient.DisableDeepCopy)
@@ -133,11 +136,11 @@ func (h *RolloutCreateUpdateHandler) validateRolloutConflict(rollout *appsv1alph
 	}
 	for i := range rolloutList.Items {
 		r := &rolloutList.Items[i]
-		if r.Name == rollout.Name || !IsSameWorkloadRefGVKName(r.Spec.ObjectRef.WorkloadRef, rollout.Spec.ObjectRef.WorkloadRef) {
+		if r.Name == rollout.Name || !IsSameWorkloadRefGVKName(r.Spec.ObjectRef.WorkloadRef, rollout.Spec.ObjectRef.WorkloadRef) || r.Spec.Disabled {
 			continue
 		}
 		return field.ErrorList{field.Invalid(path, rollout.Name,
-			fmt.Sprintf("This rollout conflict with Rollout(%v), one workload only have less than one Rollout", client.ObjectKeyFromObject(r)))}
+			fmt.Sprintf("This rollout conflict with Rollout(%v), one workload only have less than one non-disabled Rollout", client.ObjectKeyFromObject(r)))}
 	}
 	return nil
 }

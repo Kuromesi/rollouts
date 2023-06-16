@@ -66,6 +66,7 @@ type RolloutSpec struct {
 	// RolloutID should be changed before each workload revision publication.
 	// It is to distinguish consecutive multiple workload publications and rollout progress.
 	DeprecatedRolloutID string `json:"rolloutID,omitempty"`
+	Disabled            bool   `json:"disabled"`
 }
 
 type ObjectRef struct {

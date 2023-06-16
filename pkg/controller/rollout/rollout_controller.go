@@ -19,12 +19,14 @@ package rollout
 import (
 	"context"
 	"flag"
+	"reflect"
 	"sync"
 	"time"
 
 	"github.com/openkruise/rollouts/api/v1alpha1"
 	"github.com/openkruise/rollouts/pkg/trafficrouting"
 	"github.com/openkruise/rollouts/pkg/util"
+	utilclient "github.com/openkruise/rollouts/pkg/util/client"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
@@ -105,6 +107,31 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 		// Error reading the object - requeue the request.
 		return ctrl.Result{}, err
+	}
+
+	if rollout.Spec.Disabled {
+		return ctrl.Result{}, nil
+	}
+
+	rolloutList := &v1alpha1.RolloutList{}
+	err = r.List(context.TODO(), rolloutList, client.InNamespace(rollout.Namespace), utilclient.DisableDeepCopy)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	for i := range rolloutList.Items {
+		ri := &rolloutList.Items[i]
+		if ri.Name == rollout.Name ||
+			func(a, b *v1alpha1.WorkloadRef) bool {
+				if a == nil || b == nil {
+					return false
+				}
+				return reflect.DeepEqual(a, b)
+			}(ri.Spec.ObjectRef.WorkloadRef, rollout.Spec.ObjectRef.WorkloadRef) ||
+			ri.Spec.Disabled {
+			continue
+		}
+		return ctrl.Result{}, nil
 	}
 
 	klog.Infof("Begin to reconcile Rollout %v", klog.KObj(rollout))

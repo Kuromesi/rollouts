@@ -1,6 +1,6 @@
 
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= rollouts:testdj
 # Platforms to build the image for
 PLATFORMS ?= linux/amd64,linux/arm64
 
@@ -92,7 +92,7 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
-ifeq ("$(shell $(CONTROLLER_GEN) --version)", "Version: v0.7.0")
+ifeq ("$(shell $(CONTROLLER_GEN) --version)", "Version: v0.11.3")
 else
 	rm -rf $(CONTROLLER_GEN)
 	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.7.0)
