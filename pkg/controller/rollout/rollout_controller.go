@@ -131,7 +131,7 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			ri.Spec.Disabled {
 			continue
 		}
-		return ctrl.Result{}, nil
+		// return ctrl.Result{}, errors.NewAlreadyExists(ri, rollout.Name)
 	}
 
 	klog.Infof("Begin to reconcile Rollout %v", klog.KObj(rollout))
@@ -168,6 +168,21 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	var recheckTime *time.Time
 	switch rollout.Status.Phase {
 	case v1alpha1.RolloutPhaseProgressing:
+		if rollout.Spec.Disabled {
+			workload, err := r.finder.GetWorkloadForRef(rollout)
+			if err != nil {
+				klog.Errorf("rollout(%s/%s) get workload failed: %s", rollout.Namespace, rollout.Name, err.Error())
+				return ctrl.Result{}, err
+			} else if workload == nil {
+				klog.Errorf("rollout(%s/%s) workload Not Found", rollout.Namespace, rollout.Name)
+				return ctrl.Result{}, nil
+			} else if !workload.IsStatusConsistent {
+				klog.Infof("rollout(%s/%s) workload status is inconsistent, then wait a moment", rollout.Namespace, rollout.Name)
+				return ctrl.Result{}, nil
+			}
+			rolloutContext := &util.RolloutContext{Rollout: rollout, NewStatus: newStatus, Workload: workload}
+			r.doFinalising(rolloutContext)
+		}
 		recheckTime, err = r.reconcileRolloutProgressing(rollout, newStatus)
 	case v1alpha1.RolloutPhaseTerminating:
 		recheckTime, err = r.reconcileRolloutTerminating(rollout, newStatus)
