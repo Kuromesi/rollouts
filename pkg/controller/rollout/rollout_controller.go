@@ -19,6 +19,7 @@ package rollout
 import (
 	"context"
 	"flag"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"github.com/openkruise/rollouts/pkg/trafficrouting"
 	"github.com/openkruise/rollouts/pkg/util"
 	utilclient "github.com/openkruise/rollouts/pkg/util/client"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
@@ -109,29 +111,27 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	if rollout.Spec.Disabled {
-		return ctrl.Result{}, nil
-	}
-
 	rolloutList := &v1alpha1.RolloutList{}
 	err = r.List(context.TODO(), rolloutList, client.InNamespace(rollout.Namespace), utilclient.DisableDeepCopy)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
+	// check if conflict with other rollouts, delete if conflicted
 	for i := range rolloutList.Items {
 		ri := &rolloutList.Items[i]
-		if ri.Name == rollout.Name ||
-			func(a, b *v1alpha1.WorkloadRef) bool {
-				if a == nil || b == nil {
-					return false
+		if func(a, b *v1alpha1.WorkloadRef) bool {
+			if a == nil || b == nil {
+				return false
+			}
+			return reflect.DeepEqual(a, b)
+		}(ri.Spec.ObjectRef.WorkloadRef, rollout.Spec.ObjectRef.WorkloadRef) {
+			if ri.Name != rollout.Name && !ri.Spec.Disabled {
+				if !rollout.Spec.Disabled {
+					return ctrl.Result{}, fmt.Errorf("conflict with rollout %s and deleting", ri.Name)
 				}
-				return reflect.DeepEqual(a, b)
-			}(ri.Spec.ObjectRef.WorkloadRef, rollout.Spec.ObjectRef.WorkloadRef) ||
-			ri.Spec.Disabled {
-			continue
+			}
 		}
-		// return ctrl.Result{}, errors.NewAlreadyExists(ri, rollout.Name)
 	}
 
 	klog.Infof("Begin to reconcile Rollout %v", klog.KObj(rollout))
@@ -157,6 +157,16 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
+	// if in progressing and Spec.Disables set to be true
+	if rollout.Status.Phase == v1alpha1.RolloutPhaseProgressing && rollout.Spec.Disabled {
+		rollout.Status.Phase = v1alpha1.RolloutPhaseTerminating
+		cond := util.NewRolloutCondition(v1alpha1.RolloutConditionTerminating, corev1.ConditionTrue, v1alpha1.TerminatingReasonInTerminating, "Rollout is in terminating")
+		util.SetRolloutCondition(&rollout.Status, *cond)
+		r.reconcileRolloutTerminating(rollout, &rollout.Status)
+		rollout.Status = v1alpha1.RolloutStatus{}
+	}
+
 	// sync rollout status
 	retry, newStatus, err := r.calculateRolloutStatus(rollout)
 	if err != nil {
@@ -168,21 +178,6 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	var recheckTime *time.Time
 	switch rollout.Status.Phase {
 	case v1alpha1.RolloutPhaseProgressing:
-		if rollout.Spec.Disabled {
-			workload, err := r.finder.GetWorkloadForRef(rollout)
-			if err != nil {
-				klog.Errorf("rollout(%s/%s) get workload failed: %s", rollout.Namespace, rollout.Name, err.Error())
-				return ctrl.Result{}, err
-			} else if workload == nil {
-				klog.Errorf("rollout(%s/%s) workload Not Found", rollout.Namespace, rollout.Name)
-				return ctrl.Result{}, nil
-			} else if !workload.IsStatusConsistent {
-				klog.Infof("rollout(%s/%s) workload status is inconsistent, then wait a moment", rollout.Namespace, rollout.Name)
-				return ctrl.Result{}, nil
-			}
-			rolloutContext := &util.RolloutContext{Rollout: rollout, NewStatus: newStatus, Workload: workload}
-			r.doFinalising(rolloutContext)
-		}
 		recheckTime, err = r.reconcileRolloutProgressing(rollout, newStatus)
 	case v1alpha1.RolloutPhaseTerminating:
 		recheckTime, err = r.reconcileRolloutTerminating(rollout, newStatus)

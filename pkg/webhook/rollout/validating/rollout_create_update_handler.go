@@ -120,7 +120,7 @@ func (h *RolloutCreateUpdateHandler) validateRolloutUpdate(oldObj, newObj *appsv
 
 func (h *RolloutCreateUpdateHandler) validateRollout(rollout *appsv1alpha1.Rollout) field.ErrorList {
 	errList := validateRolloutSpec(rollout, field.NewPath("Spec"))
-	errList = append(errList, h.validateRolloutConflict(rollout, field.NewPath("Conflict Checker"))...)
+	// errList = append(errList, h.validateRolloutConflict(rollout, field.NewPath("Conflict Checker"))...)
 	return errList
 }
 
