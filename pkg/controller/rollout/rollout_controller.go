@@ -135,7 +135,7 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	if rollout.Status.Phase != "Enabling" {
+	if rollout.Status.Phase != "Enabling" && rollout.Status.Phase != v1alpha1.RolloutPhaseTerminating {
 		rolloutList := &v1alpha1.RolloutList{}
 		err = r.List(context.TODO(), rolloutList, client.InNamespace(rollout.Namespace), utilclient.DisableDeepCopy)
 		if err != nil {
@@ -167,7 +167,7 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 					util.SetRolloutCondition(&rollout.Status, *cond)
 					r.reconcileRolloutTerminating(rollout, &rollout.Status)
 				}
-				rollout.Status.Phase = v1alpha1.RolloutPhaseDisabled
+				rollout.Status = v1alpha1.RolloutStatus{Phase: v1alpha1.RolloutPhaseDisabled}
 				for i := range rolloutList.Items {
 					ri := &rolloutList.Items[i]
 					if func(a, b *v1alpha1.WorkloadRef) bool {
@@ -179,7 +179,7 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 						if ri.Name != rollout.Name && !ri.Spec.Disabled && ri.Status.Phase == v1alpha1.RolloutPhaseConflict {
 							klog.Errorf("Deconflicting %s", ri.Name)
 							ri.Status.Phase = "Enabling"
-							err = r.Update(context.TODO(), ri)
+							r.Client.Status().Update(context.TODO(), ri)
 							if err != nil {
 								klog.Errorf("error updating rollout %s", ri.Name)
 							}

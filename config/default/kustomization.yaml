@@ -43,6 +43,6 @@ resources:
 - ../crd
 - ../manager
 - ../rbac
-- ../webhook
+# - ../webhook
 patches:
 - path: manager_auth_proxy_patch.yaml
