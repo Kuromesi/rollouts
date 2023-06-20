@@ -165,7 +165,7 @@ func (r *RolloutReconciler) doProgressingInRolling(c *util.RolloutContext) error
 		return r.handleRolloutPaused(c.Rollout, c.NewStatus)
 
 	// 3. In case of rollback in a batch way, use rollout step strategy
-	case isRollingBackInBatches(c.Rollout, c.Workload) || isToDisabled(c.Rollout):
+	case isRollingBackInBatches(c.Rollout, c.Workload):
 		return r.handleRollbackInBatches(c.Rollout, c.Workload, c.NewStatus)
 
 	// 4. In case of continuous publishing(v1 -> v2 -> v3), restart publishing
@@ -278,10 +278,6 @@ func isRollingBackDirectly(rollout *v1alpha1.Rollout, workload *util.Workload) b
 	status := &rollout.Status
 	inBatch := util.IsRollbackInBatchPolicy(rollout, workload.Labels)
 	return workload.IsInRollback && workload.CanaryRevision != status.CanaryStatus.CanaryRevision && !inBatch
-}
-
-func isToDisabled(rollout *v1alpha1.Rollout) bool {
-	return rollout.Spec.Disabled
 }
 
 func isRollingBackInBatches(rollout *v1alpha1.Rollout, workload *util.Workload) bool {

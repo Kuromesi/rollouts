@@ -49,7 +49,30 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 		}
 		return false, newStatus, nil
 	}
-	if newStatus.Phase == "" {
+
+	// if rollout is disabled
+	if rollout.Spec.Disabled && rollout.Status.Phase != v1alpha1.RolloutPhaseTerminating {
+		klog.Errorf("KUROMESI needle1: %s", rollout.Status.Phase)
+		newStatus = &v1alpha1.RolloutStatus{
+			ObservedGeneration: rollout.Generation,
+			Phase:              v1alpha1.RolloutPhaseDisabled,
+			Message:            "Rollout is disabled",
+		}
+		return false, newStatus, nil
+	}
+
+	// if rollout is conflicted
+	if newStatus.Phase == v1alpha1.RolloutPhaseConflict {
+		newStatus = &v1alpha1.RolloutStatus{
+			ObservedGeneration: rollout.Generation,
+			Phase:              v1alpha1.RolloutPhaseConflict,
+			Message:            "Rollout is conflicted",
+		}
+		return false, newStatus, nil
+	}
+
+	if newStatus.Phase == "" || newStatus.Phase == "Enabling" {
+		klog.Errorf("KUROMESI newStatus.Phase: %s", newStatus.Phase)
 		newStatus.Phase = v1alpha1.RolloutPhaseInitial
 	}
 	// get ref workload
