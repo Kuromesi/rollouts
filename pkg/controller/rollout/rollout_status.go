@@ -94,7 +94,7 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 
 	// check if rollout is conflicting
 	if !rollout.Spec.Disabled {
-		if rollout.Status.Phase == "" {
+		if rollout.Status.Phase == "" || rollout.Status.Phase == v1alpha1.RolloutPhaseDisabled {
 			conflict, err := r.checkConflict(rollout)
 			if err != nil {
 				return false, newStatus, nil
@@ -108,6 +108,10 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 				return false, newStatus, nil
 			}
 		}
+	}
+
+	if rollout.Status.Phase == v1alpha1.RolloutPhaseConflict {
+		return false, newStatus, nil
 	}
 
 	if newStatus.Phase == "" || newStatus.Phase == "Enabling" {
