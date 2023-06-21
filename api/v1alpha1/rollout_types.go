@@ -311,10 +311,12 @@ const (
 	RolloutPhaseProgressing RolloutPhase = "Progressing"
 	// RolloutPhaseTerminating indicates a rollout is terminated
 	RolloutPhaseTerminating RolloutPhase = "Terminating"
-	// RolloutPhaseConflict indicates a rollout is conflicted with another rollout
-	RolloutPhaseConflict RolloutPhase = "Conflicted"
+	// RolloutPhaseConflict indicates a rollout conflict with another rollout
+	RolloutPhaseConflict RolloutPhase = "Conflicting"
 	// RolloutPhaseDisabled indicates a rollout is disabled
 	RolloutPhaseDisabled RolloutPhase = "Disabled"
+	// RolloutPhaseEnabling indicates a conflicting rollout is enabling
+	RolloutPhaseEnabling RolloutPhase = "Enabling"
 )
 
 // +genclient

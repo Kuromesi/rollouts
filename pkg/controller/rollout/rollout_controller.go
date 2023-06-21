@@ -19,15 +19,12 @@ package rollout
 import (
 	"context"
 	"flag"
-	"reflect"
 	"sync"
 	"time"
 
 	"github.com/openkruise/rollouts/api/v1alpha1"
 	"github.com/openkruise/rollouts/pkg/trafficrouting"
 	"github.com/openkruise/rollouts/pkg/util"
-	utilclient "github.com/openkruise/rollouts/pkg/util/client"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
@@ -100,7 +97,6 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Fetch the Rollout instance
 	rollout := &v1alpha1.Rollout{}
 	err := r.Get(context.TODO(), req.NamespacedName, rollout)
-	klog.Errorf("KUROMESI reconcile entry: %s", req.NamespacedName)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Object not found, return.  Created objects are automatically garbage collected.
@@ -133,61 +129,6 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	err = r.handleFinalizer(rollout)
 	if err != nil {
 		return ctrl.Result{}, err
-	}
-
-	if rollout.Status.Phase != "Enabling" && rollout.Status.Phase != v1alpha1.RolloutPhaseTerminating {
-		rolloutList := &v1alpha1.RolloutList{}
-		err = r.List(context.TODO(), rolloutList, client.InNamespace(rollout.Namespace), utilclient.DisableDeepCopy)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		// check if conflict with other rollouts
-		if !rollout.Spec.Disabled {
-			for i := range rolloutList.Items {
-				ri := &rolloutList.Items[i]
-				klog.Errorf("KUROMESI for loop %s", ri.Name)
-				if func(a, b *v1alpha1.WorkloadRef) bool {
-					if a == nil || b == nil {
-						return false
-					}
-					return reflect.DeepEqual(a, b)
-				}(ri.Spec.ObjectRef.WorkloadRef, rollout.Spec.ObjectRef.WorkloadRef) {
-					if ri.Name != rollout.Name && ri.Status.Phase != v1alpha1.RolloutPhaseDisabled {
-						klog.Errorf("conflict with rollouts %s", ri.Name)
-						rollout.Status.Phase = v1alpha1.RolloutPhaseConflict
-						break
-					}
-				}
-			}
-		} else {
-			if rollout.Status.Phase != v1alpha1.RolloutPhaseDisabled {
-				if rollout.Status.Phase == v1alpha1.RolloutPhaseProgressing {
-					rollout.Status.Phase = v1alpha1.RolloutPhaseTerminating
-					cond := util.NewRolloutCondition(v1alpha1.RolloutConditionTerminating, corev1.ConditionTrue, v1alpha1.TerminatingReasonInTerminating, "Rollout is in terminating")
-					util.SetRolloutCondition(&rollout.Status, *cond)
-					r.reconcileRolloutTerminating(rollout, &rollout.Status)
-				}
-				rollout.Status = v1alpha1.RolloutStatus{Phase: v1alpha1.RolloutPhaseDisabled}
-				for i := range rolloutList.Items {
-					ri := &rolloutList.Items[i]
-					if func(a, b *v1alpha1.WorkloadRef) bool {
-						if a == nil || b == nil {
-							return false
-						}
-						return reflect.DeepEqual(a, b)
-					}(ri.Spec.ObjectRef.WorkloadRef, rollout.Spec.ObjectRef.WorkloadRef) {
-						if ri.Name != rollout.Name && !ri.Spec.Disabled && ri.Status.Phase == v1alpha1.RolloutPhaseConflict {
-							klog.Errorf("Deconflicting %s", ri.Name)
-							ri.Status.Phase = "Enabling"
-							r.Client.Status().Update(context.TODO(), ri)
-							if err != nil {
-								klog.Errorf("error updating rollout %s", ri.Name)
-							}
-						}
-					}
-				}
-			}
-		}
 	}
 
 	// sync rollout status

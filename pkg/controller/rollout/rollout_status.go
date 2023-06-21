@@ -24,6 +24,7 @@ import (
 
 	"github.com/openkruise/rollouts/api/v1alpha1"
 	"github.com/openkruise/rollouts/pkg/util"
+	utilclient "github.com/openkruise/rollouts/pkg/util/client"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
@@ -50,9 +51,39 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 		return false, newStatus, nil
 	}
 
-	// if rollout is disabled
+	// if rollout is disabled and is not terminating
 	if rollout.Spec.Disabled && rollout.Status.Phase != v1alpha1.RolloutPhaseTerminating {
-		klog.Errorf("KUROMESI needle1: %s", rollout.Status.Phase)
+		if rollout.Status.Phase != v1alpha1.RolloutPhaseDisabled && rollout.Status.Phase != "" {
+			rolloutList := &v1alpha1.RolloutList{}
+			err := r.List(context.TODO(), rolloutList, client.InNamespace(rollout.Namespace), utilclient.DisableDeepCopy)
+			if err != nil {
+				return false, newStatus, err
+			}
+			if rollout.Status.Phase == v1alpha1.RolloutPhaseProgressing {
+				rollout.Status.Phase = v1alpha1.RolloutPhaseTerminating
+				cond := util.NewRolloutCondition(v1alpha1.RolloutConditionTerminating, corev1.ConditionTrue, v1alpha1.TerminatingReasonInTerminating, "Rollout is in terminating")
+				util.SetRolloutCondition(&rollout.Status, *cond)
+				r.reconcileRolloutTerminating(rollout, &rollout.Status)
+			}
+			for i := range rolloutList.Items {
+				ri := &rolloutList.Items[i]
+				if func(a, b *v1alpha1.WorkloadRef) bool {
+					if a == nil || b == nil {
+						return false
+					}
+					return reflect.DeepEqual(a, b)
+				}(ri.Spec.ObjectRef.WorkloadRef, rollout.Spec.ObjectRef.WorkloadRef) {
+					if ri.Name != rollout.Name && !ri.Spec.Disabled && ri.Status.Phase == v1alpha1.RolloutPhaseConflict {
+						klog.Infof("enabling %s", ri.Name)
+						ri.Status.Phase = v1alpha1.RolloutPhaseEnabling
+						r.Client.Status().Update(context.TODO(), ri)
+						if err != nil {
+							klog.Errorf("error updating rollout %s", ri.Name)
+						}
+					}
+				}
+			}
+		}
 		newStatus = &v1alpha1.RolloutStatus{
 			ObservedGeneration: rollout.Generation,
 			Phase:              v1alpha1.RolloutPhaseDisabled,
@@ -61,18 +92,25 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 		return false, newStatus, nil
 	}
 
-	// if rollout is conflicted
-	if newStatus.Phase == v1alpha1.RolloutPhaseConflict {
-		newStatus = &v1alpha1.RolloutStatus{
-			ObservedGeneration: rollout.Generation,
-			Phase:              v1alpha1.RolloutPhaseConflict,
-			Message:            "Rollout is conflicted",
+	// check if rollout is conflicting
+	if !rollout.Spec.Disabled {
+		if rollout.Status.Phase == "" {
+			conflict, err := r.checkConflict(rollout)
+			if err != nil {
+				return false, newStatus, nil
+			}
+			if conflict {
+				newStatus = &v1alpha1.RolloutStatus{
+					ObservedGeneration: rollout.Generation,
+					Phase:              v1alpha1.RolloutPhaseConflict,
+					Message:            "Rollout is conflicting",
+				}
+				return false, newStatus, nil
+			}
 		}
-		return false, newStatus, nil
 	}
 
 	if newStatus.Phase == "" || newStatus.Phase == "Enabling" {
-		klog.Errorf("KUROMESI newStatus.Phase: %s", newStatus.Phase)
 		newStatus.Phase = v1alpha1.RolloutPhaseInitial
 	}
 	// get ref workload
@@ -145,6 +183,35 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 		}
 	}
 	return false, newStatus, nil
+}
+
+func (r *RolloutReconciler) checkConflict(rollout *v1alpha1.Rollout) (bool, error) {
+	var conflict bool
+	// if rollout is enabling or terminating then the conflict check is not neccessary
+	if rollout.Status.Phase != v1alpha1.RolloutPhaseEnabling && rollout.Status.Phase != v1alpha1.RolloutPhaseTerminating {
+		rolloutList := &v1alpha1.RolloutList{}
+		err := r.List(context.TODO(), rolloutList, client.InNamespace(rollout.Namespace), utilclient.DisableDeepCopy)
+		if err != nil {
+			return conflict, err
+		}
+		// check if conflict with other rollouts
+		for i := range rolloutList.Items {
+			ri := &rolloutList.Items[i]
+			if func(a, b *v1alpha1.WorkloadRef) bool {
+				if a == nil || b == nil {
+					return false
+				}
+				return reflect.DeepEqual(a, b)
+			}(ri.Spec.ObjectRef.WorkloadRef, rollout.Spec.ObjectRef.WorkloadRef) {
+				if ri.Name != rollout.Name && ri.Status.Phase != v1alpha1.RolloutPhaseDisabled && ri.Status.Phase != v1alpha1.RolloutPhaseConflict {
+					klog.Errorf("conflict with rollout %s", ri.Name)
+					conflict = true
+					break
+				}
+			}
+		}
+	}
+	return conflict, nil
 }
 
 // rolloutHash mainly records the step batch information, when the user step changes,
