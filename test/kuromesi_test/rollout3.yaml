@@ -1,12 +1,12 @@
 apiVersion: rollouts.kruise.io/v1alpha1
 kind: Rollout
 metadata:
-  name: rollouts-demo
+  name: rollouts-demo2
   namespace: default
   annotations:
     rollouts.kruise.io/rolling-style: partition
 spec:
-  disabled: false
+  disabled: true
   objectRef:
     workloadRef:
       apiVersion: apps/v1
@@ -15,5 +15,5 @@ spec:
   strategy:
     canary:
       steps:
-      - replicas: 2
+      - replicas: 1
       - replicas: 50%

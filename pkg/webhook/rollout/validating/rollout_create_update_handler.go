@@ -136,7 +136,7 @@ func (h *RolloutCreateUpdateHandler) validateRolloutConflict(rollout *appsv1alph
 	}
 	for i := range rolloutList.Items {
 		r := &rolloutList.Items[i]
-		if r.Name == rollout.Name || !IsSameWorkloadRefGVKName(r.Spec.ObjectRef.WorkloadRef, rollout.Spec.ObjectRef.WorkloadRef) || r.Spec.Disabled {
+		if r.Name == rollout.Name || !IsSameWorkloadRefGVKName(r.Spec.ObjectRef.WorkloadRef, rollout.Spec.ObjectRef.WorkloadRef) || r.Status.Phase != appsv1alpha1.RolloutPhaseDisabled && r.Status.Phase != appsv1alpha1.RolloutPhaseConflict {
 			continue
 		}
 		return field.ErrorList{field.Invalid(path, rollout.Name,

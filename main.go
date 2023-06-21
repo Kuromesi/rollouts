@@ -29,6 +29,7 @@ import (
 	"github.com/openkruise/rollouts/pkg/controller/rollouthistory"
 	utilclient "github.com/openkruise/rollouts/pkg/util/client"
 	utilfeature "github.com/openkruise/rollouts/pkg/util/feature"
+	"github.com/openkruise/rollouts/pkg/webhook"
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -123,11 +124,11 @@ func main() {
 	}
 
 	//+kubebuilder:scaffold:builder
-	// setupLog.Info("setup webhook")
-	// if err = webhook.SetupWithManager(mgr); err != nil {
-	// 	setupLog.Error(err, "unable to setup webhook")
-	// 	os.Exit(1)
-	// }
+	setupLog.Info("setup webhook")
+	if err = webhook.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to setup webhook")
+		os.Exit(1)
+	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")

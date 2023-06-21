@@ -44,6 +44,37 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 	// delete rollout CRD
 	if !rollout.DeletionTimestamp.IsZero() {
 		if newStatus.Phase != v1alpha1.RolloutPhaseTerminating {
+			if newStatus.Phase != v1alpha1.RolloutPhaseDisabled && newStatus.Phase != v1alpha1.RolloutPhaseConflict {
+				rolloutList := &v1alpha1.RolloutList{}
+				err := r.List(context.TODO(), rolloutList, client.InNamespace(rollout.Namespace), utilclient.DisableDeepCopy)
+				if err != nil {
+					return false, newStatus, err
+				}
+				if newStatus.Phase == v1alpha1.RolloutPhaseProgressing {
+					rollout.Status.Phase = v1alpha1.RolloutPhaseTerminating
+					cond := util.NewRolloutCondition(v1alpha1.RolloutConditionTerminating, corev1.ConditionTrue, v1alpha1.TerminatingReasonInTerminating, "Rollout is in terminating")
+					util.SetRolloutCondition(&rollout.Status, *cond)
+					r.reconcileRolloutTerminating(rollout, &rollout.Status)
+				}
+				for i := range rolloutList.Items {
+					ri := &rolloutList.Items[i]
+					if func(a, b *v1alpha1.WorkloadRef) bool {
+						if a == nil || b == nil {
+							return false
+						}
+						return reflect.DeepEqual(a, b)
+					}(ri.Spec.ObjectRef.WorkloadRef, rollout.Spec.ObjectRef.WorkloadRef) {
+						if ri.Name != rollout.Name && ri.Status.Phase == v1alpha1.RolloutPhaseConflict {
+							klog.Infof("enabling %s", ri.Name)
+							ri.Status.Phase = v1alpha1.RolloutPhaseEnabling
+							r.Client.Status().Update(context.TODO(), ri)
+							if err != nil {
+								klog.Errorf("error updating rollout %s", ri.Name)
+							}
+						}
+					}
+				}
+			}
 			newStatus.Phase = v1alpha1.RolloutPhaseTerminating
 			cond := util.NewRolloutCondition(v1alpha1.RolloutConditionTerminating, corev1.ConditionTrue, v1alpha1.TerminatingReasonInTerminating, "Rollout is in terminating")
 			util.SetRolloutCondition(newStatus, *cond)
@@ -52,14 +83,14 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 	}
 
 	// if rollout is disabled and is not terminating
-	if rollout.Spec.Disabled && rollout.Status.Phase != v1alpha1.RolloutPhaseTerminating {
-		if rollout.Status.Phase != v1alpha1.RolloutPhaseDisabled && rollout.Status.Phase != "" {
+	if rollout.Spec.Disabled && newStatus.Phase != v1alpha1.RolloutPhaseTerminating {
+		if newStatus.Phase != v1alpha1.RolloutPhaseDisabled && newStatus.Phase != "" {
 			rolloutList := &v1alpha1.RolloutList{}
 			err := r.List(context.TODO(), rolloutList, client.InNamespace(rollout.Namespace), utilclient.DisableDeepCopy)
 			if err != nil {
 				return false, newStatus, err
 			}
-			if rollout.Status.Phase == v1alpha1.RolloutPhaseProgressing {
+			if newStatus.Phase == v1alpha1.RolloutPhaseProgressing {
 				rollout.Status.Phase = v1alpha1.RolloutPhaseTerminating
 				cond := util.NewRolloutCondition(v1alpha1.RolloutConditionTerminating, corev1.ConditionTrue, v1alpha1.TerminatingReasonInTerminating, "Rollout is in terminating")
 				util.SetRolloutCondition(&rollout.Status, *cond)
@@ -73,7 +104,7 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 					}
 					return reflect.DeepEqual(a, b)
 				}(ri.Spec.ObjectRef.WorkloadRef, rollout.Spec.ObjectRef.WorkloadRef) {
-					if ri.Name != rollout.Name && !ri.Spec.Disabled && ri.Status.Phase == v1alpha1.RolloutPhaseConflict {
+					if ri.Name != rollout.Name && ri.Status.Phase == v1alpha1.RolloutPhaseConflict {
 						klog.Infof("enabling %s", ri.Name)
 						ri.Status.Phase = v1alpha1.RolloutPhaseEnabling
 						r.Client.Status().Update(context.TODO(), ri)
@@ -110,11 +141,11 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 		}
 	}
 
-	if rollout.Status.Phase == v1alpha1.RolloutPhaseConflict {
+	if newStatus.Phase == v1alpha1.RolloutPhaseConflict {
 		return false, newStatus, nil
 	}
 
-	if newStatus.Phase == "" || newStatus.Phase == "Enabling" {
+	if newStatus.Phase == "" || newStatus.Phase == v1alpha1.RolloutPhaseEnabling || newStatus.Phase == v1alpha1.RolloutPhaseDisabled {
 		newStatus.Phase = v1alpha1.RolloutPhaseInitial
 	}
 	// get ref workload
