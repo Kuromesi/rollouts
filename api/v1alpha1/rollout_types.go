@@ -311,11 +311,11 @@ const (
 	RolloutPhaseProgressing RolloutPhase = "Progressing"
 	// RolloutPhaseTerminating indicates a rollout is terminated
 	RolloutPhaseTerminating RolloutPhase = "Terminating"
-	// RolloutPhaseConflict indicates a rollout conflict with another rollout
+	// RolloutPhaseConflict indicates an enabled rollout conflicts with another rollout
 	RolloutPhaseConflict RolloutPhase = "Conflicting"
 	// RolloutPhaseDisabled indicates a rollout is disabled
 	RolloutPhaseDisabled RolloutPhase = "Disabled"
-	// RolloutPhaseEnabling indicates a conflicting rollout is enabling
+	// RolloutPhaseEnabling indicates a conflicting rollout is enabling and no more conflict checks are needed
 	RolloutPhaseEnabling RolloutPhase = "Enabling"
 )
 
