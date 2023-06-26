@@ -225,16 +225,6 @@ func (r *RolloutReconciler) enableConflictingRollout(rollout *v1alpha1.Rollout) 
 				continue
 			}
 			enablingRollout = ri
-			// if ri.Name != rollout.Name && ri.Status.Phase == v1alpha1.RolloutPhaseConflict {
-			// 	klog.Infof("enabling %s", ri.Name)
-			// 	ri.Status.Phase = v1alpha1.RolloutPhaseEnabling
-			// 	err = r.Client.Status().Update(context.TODO(), ri)
-			// 	if err != nil {
-			// 		klog.Errorf("error updating rollout %s", ri.Name)
-			// 		return err
-			// 	}
-			// 	return nil
-			// }
 		}
 	}
 	if enablingRollout != nil {
