@@ -6,7 +6,7 @@ metadata:
   annotations:
     rollouts.kruise.io/rolling-style: partition
 spec:
-  disabled: false
+  disabled: true
   objectRef:
     workloadRef:
       apiVersion: apps/v1
