@@ -44,21 +44,6 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 	// delete rollout CRD
 	if !rollout.DeletionTimestamp.IsZero() {
 		if newStatus.Phase != v1alpha1.RolloutPhaseTerminating {
-			// if a rollout is working, should check if conflicting rollout exists when deleted
-			if newStatus.Phase != v1alpha1.RolloutPhaseDisabled {
-				if newStatus.Phase == v1alpha1.RolloutPhaseProgressing {
-					rollout.Status.Phase = v1alpha1.RolloutPhaseTerminating
-					cond := util.NewRolloutCondition(v1alpha1.RolloutConditionTerminating, corev1.ConditionTrue, v1alpha1.TerminatingReasonInTerminating, "Rollout is in terminating")
-					util.SetRolloutCondition(&rollout.Status, *cond)
-					recheckTime, err := r.reconcileRolloutTerminating(rollout, &rollout.Status)
-					if err != nil {
-						return false, newStatus, nil
-					}
-					if recheckTime != nil {
-						return true, newStatus, nil
-					}
-				}
-			}
 			newStatus.Phase = v1alpha1.RolloutPhaseTerminating
 			cond := util.NewRolloutCondition(v1alpha1.RolloutConditionTerminating, corev1.ConditionTrue, v1alpha1.TerminatingReasonInTerminating, "Rollout is in terminating")
 			util.SetRolloutCondition(newStatus, *cond)
@@ -171,15 +156,15 @@ func (r *RolloutReconciler) checkDisabled(rollout *v1alpha1.Rollout, newStatus *
 		return true, nil
 	}
 
-	// check if a rollout is conflicting
+	// check if a rollout conflicts
 	if !rollout.Spec.Disabled {
-		// other circumstances indicate the rollout is working and terminating, conflict check is not needed
+		// other circumstances indicate the rollout is working and terminating, thus conflict check is not needed
 		if phase == "" || phase == v1alpha1.RolloutPhaseDisabled {
 			conflict, err := r.checkConflict(rollout)
 			if err != nil || conflict {
 				*newStatus = v1alpha1.RolloutStatus{
 					ObservedGeneration: rollout.Generation,
-					Message:            "Rollout is conflicting",
+					Message:            "Rollout conflicts",
 				}
 				return true, err
 			}
@@ -191,7 +176,7 @@ func (r *RolloutReconciler) checkDisabled(rollout *v1alpha1.Rollout, newStatus *
 // check if an enabled rollout conflicts with other enabled rollout
 func (r *RolloutReconciler) checkConflict(rollout *v1alpha1.Rollout) (bool, error) {
 	// if rollout is enabling or terminating then the conflict check is not necessary
-	if rollout.Status.Phase == v1alpha1.RolloutPhaseEnabling || rollout.Status.Phase == v1alpha1.RolloutPhaseTerminating {
+	if rollout.Status.Phase == v1alpha1.RolloutPhaseTerminating {
 		return false, nil
 	}
 	rolloutList := &v1alpha1.RolloutList{}
@@ -202,7 +187,7 @@ func (r *RolloutReconciler) checkConflict(rollout *v1alpha1.Rollout) (bool, erro
 	// check if conflict with other rollouts
 	for i := range rolloutList.Items {
 		ri := &rolloutList.Items[i]
-		if ri.Name == rollout.Name || ri.Status.Phase == v1alpha1.RolloutPhaseDisabled {
+		if ri.Name == rollout.Name || ri.Status.Phase == v1alpha1.RolloutPhaseDisabled || ri.Status.Phase == "" {
 			continue
 		}
 		if func(a, b *v1alpha1.WorkloadRef) bool {

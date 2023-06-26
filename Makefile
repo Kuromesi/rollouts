@@ -1,6 +1,5 @@
-
 # Image URL to use all building/pushing image targets
-IMG ?= rollouts:testdj
+IMG ?= controller:latest
 # Platforms to build the image for
 PLATFORMS ?= linux/amd64,linux/arm64
 
@@ -92,7 +91,7 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
-ifeq ("$(shell $(CONTROLLER_GEN) --version)", "Version: v0.11.3")
+ifeq ("$(shell $(CONTROLLER_GEN) --version)", "Version: v0.7.0")
 else
 	rm -rf $(CONTROLLER_GEN)
 	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.7.0)
@@ -111,8 +110,7 @@ helm: ## Download helm locally if necessary.
 	$(call go-get-tool,$(HELM),helm.sh/helm/v3@v3.8.1)
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
-# PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
-PROJECT_DIR := $(shell pwd)
+PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 define go-get-tool
 @[ -f $(1) ] || { \
 set -e ;\
