@@ -5510,21 +5510,14 @@ var _ = SIGDescribe("Rollout", func() {
 			rollout3.Spec.Disabled = true
 			rollout2.SetNamespace(namespace)
 			Expect(k8sClient.Create(context.TODO(), rollout2)).Should(HaveOccurred())
-
 			// wait for reconciling
 			time.Sleep(3 * time.Second)
 			Expect(GetObject(rollout1.Name, rollout1)).NotTo(HaveOccurred())
 			Expect(rollout1.Status.Phase).Should(Equal(v1alpha1.RolloutPhaseInitial))
-		})
 
-		It("Disable a rolling rollout", func() {
-			By("Create an enabled rollout")
-			rollout1 := rollout.DeepCopy()
-			rollout1.Spec.Disabled = false
+			By("Create workload")
 			deploy := &apps.Deployment{}
 			Expect(ReadYamlToObject("./test_data/rollout/deployment_disabled.yaml", deploy)).ToNot(HaveOccurred())
-
-			CreateObject(rollout1)
 			CreateObject(deploy)
 			WaitDeploymentAllPodsReady(deploy)
 			Expect(GetObject(rollout1.Name, rollout1)).NotTo(HaveOccurred())
@@ -5534,22 +5527,30 @@ var _ = SIGDescribe("Rollout", func() {
 			Expect(GetObject(deploy.Name, deploy)).NotTo(HaveOccurred())
 			newEnvs := mergeEnvVar(deploy.Spec.Template.Spec.Containers[0].Env, v1.EnvVar{Name: "VERSION", Value: "version-2"})
 			deploy.Spec.Template.Spec.Containers[0].Env = newEnvs
-
 			UpdateDeployment(deploy)
 			WaitRolloutCanaryStepPaused(rollout1.Name, 1)
+			Expect(GetObject(rollout1.Name, rollout1)).NotTo(HaveOccurred())
+			Expect(rollout1.Status.CanaryStatus.CanaryReplicas).Should(BeNumerically("==", 2))
+			Expect(rollout1.Status.CanaryStatus.CanaryReadyReplicas).Should(BeNumerically("==", 2))
+			Expect(GetObject(deploy.Name, deploy)).NotTo(HaveOccurred())
+			Expect(deploy.Spec.Paused).Should(BeTrue())
 
 			By("Disable a rolling rollout")
 			rollout1.Spec.Disabled = true
 			UpdateRollout(rollout1)
 			// wait for reconciling
 			time.Sleep(5 * time.Second)
-			key := types.NamespacedName{Namespace: namespace, Name: rollout1.Name}
+
+			By("Rolling should be resumed")
+			Expect(GetObject(deploy.Name, deploy)).NotTo(HaveOccurred())
+			Expect(deploy.Spec.Paused).Should(BeFalse())
+
 			By("Batchrelease should be deleted")
+			key := types.NamespacedName{Namespace: namespace, Name: rollout1.Name}
 			Expect(k8sClient.Get(context.TODO(), key, &v1alpha1.BatchRelease{})).Should(HaveOccurred())
 			Expect(GetObject(rollout1.Name, rollout1)).NotTo(HaveOccurred())
 			Expect(rollout1.Status.Phase).Should(Equal(v1alpha1.RolloutPhaseDisabled))
 		})
-
 	})
 })
 

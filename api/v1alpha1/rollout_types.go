@@ -198,11 +198,6 @@ const (
 	ProgressingReasonCancelling   = "Cancelling"
 	ProgressingReasonPaused       = "Paused"
 
-	// Disabling condition
-	RolloutConditionDisabling RolloutConditionType = "Disabling"
-	// Disabling reason
-	DisablingReasonFinalising = "InDisabling"
-
 	// RolloutConditionSucceeded indicates whether rollout is succeeded or failed.
 	RolloutConditionSucceeded RolloutConditionType = "Succeeded"
 
