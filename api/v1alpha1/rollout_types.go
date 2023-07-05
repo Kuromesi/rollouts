@@ -73,6 +73,8 @@ type RolloutSpec struct {
 	// It is to distinguish consecutive multiple workload publications and rollout progress.
 	DeprecatedRolloutID string `json:"rolloutID,omitempty"`
 	// if a rollout disabled, then the rollout would not watch changes of workload
+	//+kubebuilder:validation:Optional
+	//+kubebuilder:default=false
 	Disabled bool `json:"disabled"`
 }
 
