@@ -5550,6 +5550,15 @@ var _ = SIGDescribe("Rollout", func() {
 			Expect(k8sClient.Get(context.TODO(), key, &v1alpha1.BatchRelease{})).Should(HaveOccurred())
 			Expect(GetObject(rollout1.Name, rollout1)).NotTo(HaveOccurred())
 			Expect(rollout1.Status.Phase).Should(Equal(v1alpha1.RolloutPhaseDisabled))
+
+			By("Updating deployment version-2 to version-3")
+			Expect(GetObject(deploy.Name, deploy)).NotTo(HaveOccurred())
+			newEnvs = mergeEnvVar(deploy.Spec.Template.Spec.Containers[0].Env, v1.EnvVar{Name: "VERSION", Value: "version-3"})
+			deploy.Spec.Template.Spec.Containers[0].Env = newEnvs
+			UpdateDeployment(deploy)
+			time.Sleep(3 * time.Second)
+			Expect(GetObject(deploy.Name, deploy)).NotTo(HaveOccurred())
+			Expect(deploy.Spec.Paused).Should(BeFalse())
 		})
 	})
 })
