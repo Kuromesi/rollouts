@@ -276,7 +276,6 @@ spec:
                     type: boolean
                 type: object
             required:
-            - disabled
             - objectRef
             - strategy
             type: object
