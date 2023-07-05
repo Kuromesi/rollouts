@@ -56,6 +56,10 @@ spec:
           spec:
             description: RolloutSpec defines the desired state of Rollout
             properties:
+              disabled:
+                description: if a rollout disabled, then the rollout would not watch
+                  changes of workload
+                type: boolean
               objectRef:
                 description: 'INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
                   Important: Run "make" to regenerate code after modifying this file
@@ -271,6 +275,7 @@ spec:
                     type: boolean
                 type: object
             required:
+            - disabled
             - objectRef
             - strategy
             type: object
