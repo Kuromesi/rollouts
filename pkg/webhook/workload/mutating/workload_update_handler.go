@@ -406,7 +406,11 @@ func (h *WorkloadHandler) fetchMatchedRollout(obj client.Object) (*appsv1alpha1.
 	}
 	for i := range rolloutList.Items {
 		rollout := &rolloutList.Items[i]
-		if !rollout.DeletionTimestamp.IsZero() || rollout.Spec.ObjectRef.WorkloadRef == nil || rollout.Status.Phase == appsv1alpha1.RolloutPhaseDisabled {
+		if !rollout.DeletionTimestamp.IsZero() || rollout.Spec.ObjectRef.WorkloadRef == nil {
+			continue
+		}
+		if rollout.Status.Phase == appsv1alpha1.RolloutPhaseDisabled {
+			klog.Infof("Disabled rollout(%s/%s) fetched when fetching matched rollout", rollout.Namespace, rollout.Name)
 			continue
 		}
 		ref := rollout.Spec.ObjectRef.WorkloadRef
