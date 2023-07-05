@@ -5489,7 +5489,7 @@ var _ = SIGDescribe("Rollout", func() {
 	KruiseDescribe("Disabled rollout tests", func() {
 		rollout := &v1alpha1.Rollout{}
 		Expect(ReadYamlToObject("./test_data/rollout/rollout_disabled.yaml", rollout)).ToNot(HaveOccurred())
-		It("Conflict checks", func() {
+		It("Rollout status tests", func() {
 			By("Create an enabled rollout")
 			rollout1 := rollout.DeepCopy()
 			rollout1.Name = "rollout-demo1"
@@ -5538,7 +5538,6 @@ var _ = SIGDescribe("Rollout", func() {
 			By("Disable a rolling rollout")
 			rollout1.Spec.Disabled = true
 			UpdateRollout(rollout1)
-			// wait for reconciling
 			time.Sleep(5 * time.Second)
 
 			By("Rolling should be resumed")
@@ -5559,6 +5558,13 @@ var _ = SIGDescribe("Rollout", func() {
 			time.Sleep(3 * time.Second)
 			Expect(GetObject(deploy.Name, deploy)).NotTo(HaveOccurred())
 			Expect(deploy.Spec.Paused).Should(BeFalse())
+
+			By("Enable a disabled rollout")
+			rollout1.Spec.Disabled = false
+			UpdateRollout(rollout1)
+			time.Sleep(3 * time.Second)
+			Expect(GetObject(rollout1.Name, rollout1)).NotTo(HaveOccurred())
+			Expect(rollout1.Status.Phase).Should(Equal(v1alpha1.RolloutPhaseHealthy))
 		})
 	})
 })
