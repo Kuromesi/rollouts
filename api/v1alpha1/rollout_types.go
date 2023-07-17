@@ -73,6 +73,8 @@ type RolloutSpec struct {
 	// It is to distinguish consecutive multiple workload publications and rollout progress.
 	DeprecatedRolloutID string `json:"rolloutID,omitempty"`
 	// if a rollout disabled, then the rollout would not watch changes of workload
+	//+kubebuilder:validation:Optional
+	//+kubebuilder:default=false
 	Disabled bool `json:"disabled"`
 }
 
@@ -115,6 +117,17 @@ type CanaryStrategy struct {
 	// FailureThreshold.
 	// Defaults to nil.
 	FailureThreshold *intstr.IntOrString `json:"failureThreshold,omitempty"`
+	// PatchPodTemplateMetadata indicates patch configuration(e.g. labels, annotations) to the canary deployment podTemplateSpec.metadata
+	// only support for canary deployment
+	// +optional
+	PatchPodTemplateMetadata *PatchPodTemplateMetadata `json:"patchPodTemplateMetadata,omitempty"`
+}
+
+type PatchPodTemplateMetadata struct {
+	// annotations
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// labels
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // CanaryStep defines a step of a canary workload.
