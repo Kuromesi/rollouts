@@ -379,6 +379,7 @@ func TestTrafficRoutingTest(t *testing.T) {
 			for _, obj := range ig {
 				checkObjEqual(client, t, obj)
 			}
+			manager.trafficRoutingManager.RemoveTrafficRoutingController(newTrafficRoutingContext(tr))
 		})
 	}
 }
