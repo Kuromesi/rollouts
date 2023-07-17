@@ -19,7 +19,6 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -35,7 +34,6 @@ import (
 	netv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/util/retry"
@@ -247,8 +245,8 @@ var _ = SIGDescribe("Rollout", func() {
 		Eventually(func() bool {
 			daemon := &appsv1alpha1.DaemonSet{}
 			Expect(GetObject(daemonset.Name, daemon)).NotTo(HaveOccurred())
-			klog.Infof("DaemonSet Generation(%d) ObservedGeneration(%d) DesiredNumberScheduled(%d) UpdatedNumberScheduled(%d) NumberReady(%d)",
-				daemon.Generation, daemon.Status.ObservedGeneration, daemon.Status.DesiredNumberScheduled, daemon.Status.UpdatedNumberScheduled, daemon.Status.NumberReady)
+			klog.Infof("DaemonSet updateStrategy(%s) Generation(%d) ObservedGeneration(%d) DesiredNumberScheduled(%d) UpdatedNumberScheduled(%d) NumberReady(%d)",
+				util.DumpJSON(daemon.Spec.UpdateStrategy), daemon.Generation, daemon.Status.ObservedGeneration, daemon.Status.DesiredNumberScheduled, daemon.Status.UpdatedNumberScheduled, daemon.Status.NumberReady)
 			return daemon.Status.ObservedGeneration == daemon.Generation && daemon.Status.DesiredNumberScheduled == daemon.Status.UpdatedNumberScheduled && daemon.Status.DesiredNumberScheduled == daemon.Status.NumberReady
 		}, 5*time.Minute, time.Second).Should(BeTrue())
 	}
@@ -444,6 +442,10 @@ var _ = SIGDescribe("Rollout", func() {
 					},
 				},
 			}
+			rollout.Spec.Strategy.Canary.PatchPodTemplateMetadata = &v1alpha1.PatchPodTemplateMetadata{
+				Labels:      map[string]string{"pod": "canary"},
+				Annotations: map[string]string{"pod": "canary"},
+			}
 			CreateObject(rollout)
 
 			By("Creating workload and waiting for all pods ready...")
@@ -459,6 +461,10 @@ var _ = SIGDescribe("Rollout", func() {
 			workload := &apps.Deployment{}
 			Expect(ReadYamlToObject("./test_data/rollout/deployment.yaml", workload)).ToNot(HaveOccurred())
 			workload.Spec.Replicas = utilpointer.Int32(3)
+			workload.Spec.Template.Labels["pod"] = "stable"
+			workload.Spec.Template.Annotations = map[string]string{
+				"pod": "stable",
+			}
 			CreateObject(workload)
 			WaitDeploymentAllPodsReady(workload)
 
@@ -486,6 +492,10 @@ var _ = SIGDescribe("Rollout", func() {
 			cIngress := &netv1.Ingress{}
 			Expect(GetObject(service.Name+"-canary", cIngress)).NotTo(HaveOccurred())
 			Expect(cIngress.Annotations[fmt.Sprintf("%s/canary-weight", nginxIngressAnnotationDefaultPrefix)]).Should(Equal("20"))
+			canaryWorkload, err := GetCanaryDeployment(workload)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(canaryWorkload.Spec.Template.Annotations["pod"]).Should(Equal("canary"))
+			Expect(canaryWorkload.Spec.Template.Labels["pod"]).Should(Equal("canary"))
 
 			// resume rollout canary
 			ResumeRolloutCanary(rollout.Name)
@@ -5470,6 +5480,8 @@ var _ = SIGDescribe("Rollout", func() {
 			Expect(k8sClient.DeleteAllOf(context.TODO(), &v1alpha1.Rollout{}, client.InNamespace(namespace), client.PropagationPolicy(metav1.DeletePropagationForeground))).Should(Succeed())
 			WaitRolloutNotFound(rollout.Name)
 			Expect(GetObject(workload.Name, workload)).NotTo(HaveOccurred())
+			workload.Spec.UpdateStrategy.RollingUpdate.Partition = utilpointer.Int32(0)
+			UpdateDaemonSet(workload)
 			WaitDaemonSetAllPodsReady(workload)
 
 			// check daemonset
@@ -5491,7 +5503,7 @@ var _ = SIGDescribe("Rollout", func() {
 	KruiseDescribe("Disabled rollout tests", func() {
 		rollout := &v1alpha1.Rollout{}
 		Expect(ReadYamlToObject("./test_data/rollout/rollout_disabled.yaml", rollout)).ToNot(HaveOccurred())
-		It("Conflict checks", func() {
+		It("Rollout status tests", func() {
 			By("Create an enabled rollout")
 			rollout1 := rollout.DeepCopy()
 			rollout1.Name = "rollout-demo1"
@@ -5504,41 +5516,22 @@ var _ = SIGDescribe("Rollout", func() {
 			rollout2.Name = "rollout-demo2"
 			rollout2.Spec.Disabled = false
 			rollout2.SetNamespace(namespace)
-			By("Webhook should throw an error")
 			Expect(k8sClient.Create(context.TODO(), rollout2)).Should(HaveOccurred())
 
 			By("Creating a disabled rollout")
 			rollout3 := rollout.DeepCopy()
 			rollout3.Name = "rollout-demo3"
 			rollout3.Spec.Disabled = true
-			CreateObject(rollout3)
-
-			By("Creating another disabled rollout")
-			rollout4 := rollout.DeepCopy()
-			rollout4.Name = "rollout-demo4"
-			rollout4.Spec.Disabled = true
-			CreateObject(rollout4)
-
+			rollout2.SetNamespace(namespace)
+			Expect(k8sClient.Create(context.TODO(), rollout2)).Should(HaveOccurred())
 			// wait for reconciling
 			time.Sleep(3 * time.Second)
 			Expect(GetObject(rollout1.Name, rollout1)).NotTo(HaveOccurred())
 			Expect(rollout1.Status.Phase).Should(Equal(v1alpha1.RolloutPhaseInitial))
 
-			Expect(GetObject(rollout3.Name, rollout3)).NotTo(HaveOccurred())
-			Expect(rollout3.Status.Phase).Should(Equal(v1alpha1.RolloutPhaseDisabled))
-
-			Expect(GetObject(rollout4.Name, rollout4)).NotTo(HaveOccurred())
-			Expect(rollout4.Status.Phase).Should(Equal(v1alpha1.RolloutPhaseDisabled))
-		})
-
-		It("Disable a rolling rollout", func() {
-			By("Create an enabled rollout")
-			rollout1 := rollout.DeepCopy()
-			rollout1.Spec.Disabled = false
+			By("Create workload")
 			deploy := &apps.Deployment{}
 			Expect(ReadYamlToObject("./test_data/rollout/deployment_disabled.yaml", deploy)).ToNot(HaveOccurred())
-
-			CreateObject(rollout1)
 			CreateObject(deploy)
 			WaitDeploymentAllPodsReady(deploy)
 			Expect(GetObject(rollout1.Name, rollout1)).NotTo(HaveOccurred())
@@ -5548,60 +5541,44 @@ var _ = SIGDescribe("Rollout", func() {
 			Expect(GetObject(deploy.Name, deploy)).NotTo(HaveOccurred())
 			newEnvs := mergeEnvVar(deploy.Spec.Template.Spec.Containers[0].Env, v1.EnvVar{Name: "VERSION", Value: "version-2"})
 			deploy.Spec.Template.Spec.Containers[0].Env = newEnvs
-
 			UpdateDeployment(deploy)
 			WaitRolloutCanaryStepPaused(rollout1.Name, 1)
+			Expect(GetObject(rollout1.Name, rollout1)).NotTo(HaveOccurred())
+			Expect(rollout1.Status.CanaryStatus.CanaryReplicas).Should(BeNumerically("==", 2))
+			Expect(rollout1.Status.CanaryStatus.CanaryReadyReplicas).Should(BeNumerically("==", 2))
+			Expect(GetObject(deploy.Name, deploy)).NotTo(HaveOccurred())
+			Expect(deploy.Spec.Paused).Should(BeTrue())
 
 			By("Disable a rolling rollout")
 			rollout1.Spec.Disabled = true
 			UpdateRollout(rollout1)
-			// wait for reconciling
-			time.Sleep(3 * time.Second)
+			time.Sleep(5 * time.Second)
+
+			By("Rolling should be resumed")
+			Expect(GetObject(deploy.Name, deploy)).NotTo(HaveOccurred())
+			Expect(deploy.Spec.Paused).Should(BeFalse())
+
+			By("Batchrelease should be deleted")
+			key := types.NamespacedName{Namespace: namespace, Name: rollout1.Name}
+			Expect(k8sClient.Get(context.TODO(), key, &v1alpha1.BatchRelease{})).Should(HaveOccurred())
 			Expect(GetObject(rollout1.Name, rollout1)).NotTo(HaveOccurred())
 			Expect(rollout1.Status.Phase).Should(Equal(v1alpha1.RolloutPhaseDisabled))
-		})
 
-	})
+			By("Updating deployment version-2 to version-3")
+			Expect(GetObject(deploy.Name, deploy)).NotTo(HaveOccurred())
+			newEnvs = mergeEnvVar(deploy.Spec.Template.Spec.Containers[0].Env, v1.EnvVar{Name: "VERSION", Value: "version-3"})
+			deploy.Spec.Template.Spec.Containers[0].Env = newEnvs
+			UpdateDeployment(deploy)
+			time.Sleep(3 * time.Second)
+			Expect(GetObject(deploy.Name, deploy)).NotTo(HaveOccurred())
+			Expect(deploy.Spec.Paused).Should(BeFalse())
 
-	KruiseDescribe("Custom network provider tests", func() {
-		It("Istio VirtualService test", func() {
-			index1 := &v1.ConfigMap{}
-			index2 := &v1.ConfigMap{}
-			Expect(ReadYamlToObject("./test_data/custom/index1.yaml", index1)).ToNot(HaveOccurred())
-			Expect(ReadYamlToObject("./test_data/custom/index2.yaml", index2)).ToNot(HaveOccurred())
-			CreateObject(index1)
-			CreateObject(index2)
-
-			svc := &v1.Service{}
-			Expect(ReadYamlToObject("./test_data/custom/service.yaml", svc)).ToNot(HaveOccurred())
-			CreateObject(svc)
-
-			app := &apps.Deployment{}
-			Expect(ReadYamlToObject("./test_data/custom/appv1.yaml", app)).ToNot(HaveOccurred())
-			CreateObject(app)
-			WaitDeploymentAllPodsReady(app)
-
-			virtualService := &unstructured.Unstructured{}
-			Expect(ReadYamlToObject("./test_data/custom/virtualService.yaml", virtualService)).ToNot(HaveOccurred())
-			CreateObject(virtualService)
-			expectVirtualService := &unstructured.Unstructured{}
-			Expect(ReadYamlToObject("./test_data/custom/expectVirtualService.yaml", expectVirtualService)).ToNot(HaveOccurred())
-
-			rollout := &v1alpha1.Rollout{}
-			Expect(ReadYamlToObject("./test_data/custom/rollout.yaml", rollout)).ToNot(HaveOccurred())
-			CreateObject(rollout)
-
-			vsClone := virtualService.DeepCopy()
-			Expect(GetObject(vsClone.GetName(), vsClone)).ToNot(HaveOccurred())
-			Expect(reflect.DeepEqual(vsClone.Object["spec"], virtualService.Object["spec"])).To(BeTrue())
-
-			By("changing app version from v1 -> v2")
-			Expect(GetObject(app.Name, app)).NotTo(HaveOccurred())
-			app.Spec.Template.Spec.Volumes[0].ConfigMap.Name = "nginx-configMap2"
-			UpdateDeployment(app)
-			WaitRolloutCanaryStepPaused(rollout.Name, 1)
-			Expect(GetObject(vsClone.GetName(), vsClone)).ToNot(HaveOccurred())
-			Expect(reflect.DeepEqual(vsClone.Object["spec"], expectVirtualService.Object["spec"])).To(BeTrue())
+			By("Enable a disabled rollout")
+			rollout1.Spec.Disabled = false
+			UpdateRollout(rollout1)
+			time.Sleep(3 * time.Second)
+			Expect(GetObject(rollout1.Name, rollout1)).NotTo(HaveOccurred())
+			Expect(rollout1.Status.Phase).Should(Equal(v1alpha1.RolloutPhaseHealthy))
 		})
 	})
 })

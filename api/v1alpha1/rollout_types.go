@@ -72,6 +72,10 @@ type RolloutSpec struct {
 	// RolloutID should be changed before each workload revision publication.
 	// It is to distinguish consecutive multiple workload publications and rollout progress.
 	DeprecatedRolloutID string `json:"rolloutID,omitempty"`
+	// if a rollout disabled, then the rollout would not watch changes of workload
+	//+kubebuilder:validation:Optional
+	//+kubebuilder:default=false
+	Disabled bool `json:"disabled"`
 }
 
 type ObjectRef struct {
@@ -113,6 +117,17 @@ type CanaryStrategy struct {
 	// FailureThreshold.
 	// Defaults to nil.
 	FailureThreshold *intstr.IntOrString `json:"failureThreshold,omitempty"`
+	// PatchPodTemplateMetadata indicates patch configuration(e.g. labels, annotations) to the canary deployment podTemplateSpec.metadata
+	// only support for canary deployment
+	// +optional
+	PatchPodTemplateMetadata *PatchPodTemplateMetadata `json:"patchPodTemplateMetadata,omitempty"`
+}
+
+type PatchPodTemplateMetadata struct {
+	// annotations
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// labels
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // CanaryStep defines a step of a canary workload.
@@ -257,6 +272,10 @@ const (
 	RolloutPhaseProgressing RolloutPhase = "Progressing"
 	// RolloutPhaseTerminating indicates a rollout is terminated
 	RolloutPhaseTerminating RolloutPhase = "Terminating"
+	// RolloutPhaseDisabled indicates a rollout is disabled
+	RolloutPhaseDisabled RolloutPhase = "Disabled"
+	// RolloutPhaseDisabling indicates a rollout is disabling and releasing resources
+	RolloutPhaseDisabling RolloutPhase = "Disabling"
 )
 
 // +genclient

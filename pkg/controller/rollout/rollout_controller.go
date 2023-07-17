@@ -130,6 +130,11 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	// Patch rollout webhook objectSelector in workload labels[rollouts.kruise.io/workload-type],
+	// then rollout only webhook the workload which contains labels[rollouts.kruise.io/workload-type].
+	if err = r.patchWorkloadRolloutWebhookLabel(rollout); err != nil {
+		return ctrl.Result{}, err
+	}
 	// sync rollout status
 	retry, newStatus, err := r.calculateRolloutStatus(rollout)
 	if err != nil {
@@ -139,11 +144,14 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{RequeueAfter: time.Until(recheckTime)}, nil
 	}
 	var recheckTime *time.Time
+
 	switch rollout.Status.Phase {
 	case v1alpha1.RolloutPhaseProgressing:
 		recheckTime, err = r.reconcileRolloutProgressing(rollout, newStatus)
 	case v1alpha1.RolloutPhaseTerminating:
 		recheckTime, err = r.reconcileRolloutTerminating(rollout, newStatus)
+	case v1alpha1.RolloutPhaseDisabling:
+		recheckTime, err = r.reconcileRolloutDisabling(rollout, newStatus)
 	}
 	if err != nil {
 		return ctrl.Result{}, err

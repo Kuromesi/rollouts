@@ -25,6 +25,7 @@ import (
 	"github.com/openkruise/rollouts/api/v1alpha1"
 	"github.com/openkruise/rollouts/pkg/util"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/util/retry"
@@ -49,6 +50,18 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 		}
 		return false, newStatus, nil
 	}
+
+	if rollout.Spec.Disabled && newStatus.Phase != v1alpha1.RolloutPhaseDisabled && newStatus.Phase != v1alpha1.RolloutPhaseDisabling {
+		// if rollout in progressing, indicates a working rollout is disabled, then the rollout should be finalized
+		if newStatus.Phase == v1alpha1.RolloutPhaseProgressing {
+			newStatus.Phase = v1alpha1.RolloutPhaseDisabling
+			newStatus.Message = "Disabling rollout, release resources"
+		} else {
+			newStatus.Phase = v1alpha1.RolloutPhaseDisabled
+			newStatus.Message = "Rollout is disabled"
+		}
+	}
+
 	if newStatus.Phase == "" {
 		newStatus.Phase = v1alpha1.RolloutPhaseInitial
 	}
@@ -58,22 +71,22 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 		klog.Errorf("rollout(%s/%s) get workload failed: %s", rollout.Namespace, rollout.Name, err.Error())
 		return false, nil, err
 	} else if workload == nil {
-		newStatus = &v1alpha1.RolloutStatus{
-			ObservedGeneration: rollout.Generation,
-			Phase:              v1alpha1.RolloutPhaseInitial,
-			Message:            "Workload Not Found",
+		if !rollout.Spec.Disabled {
+			newStatus = &v1alpha1.RolloutStatus{
+				ObservedGeneration: rollout.Generation,
+				Phase:              v1alpha1.RolloutPhaseInitial,
+				Message:            "Workload Not Found",
+			}
+			klog.Infof("rollout(%s/%s) workload not found, and reset status be Initial", rollout.Namespace, rollout.Name)
 		}
-		klog.Infof("rollout(%s/%s) workload not found, and reset status be Initial", rollout.Namespace, rollout.Name)
 		return false, newStatus, nil
 	}
-	klog.V(5).Infof("rollout(%s/%s) workload(%s)", rollout.Namespace, rollout.Name, util.DumpJSON(workload))
-	// todo, patch workload webhook labels
+	klog.V(5).Infof("rollout(%s/%s) fetch workload(%s)", rollout.Namespace, rollout.Name, util.DumpJSON(workload))
 	// workload status generation is not equal to workload.generation
 	if !workload.IsStatusConsistent {
 		klog.Infof("rollout(%s/%s) workload status is inconsistent, then wait a moment", rollout.Namespace, rollout.Name)
 		return true, nil, nil
 	}
-
 	// update workload generation to canaryStatus.ObservedWorkloadGeneration
 	// rollout is a target ref bypass, so there needs to be a field to identify the rollout execution process or results,
 	// which version of deployment is targeted, ObservedWorkloadGeneration that is to compare with the workload generation
@@ -121,6 +134,11 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1alpha1.Rollout) (r
 				RolloutHash:                rollout.Annotations[util.RolloutHashAnnotation],
 			}
 			newStatus.Message = "workload deployment is completed"
+		}
+	case v1alpha1.RolloutPhaseDisabled:
+		if !rollout.Spec.Disabled {
+			newStatus.Phase = v1alpha1.RolloutPhaseHealthy
+			newStatus.Message = "rollout is healthy"
 		}
 	}
 	return false, newStatus, nil
@@ -205,6 +223,65 @@ func (r *RolloutReconciler) reconcileRolloutTerminating(rollout *v1alpha1.Rollou
 		klog.Infof("rollout(%s/%s) terminating is incomplete, and recheck(%s)", rollout.Namespace, rollout.Name, expectedTime.String())
 	}
 	return c.RecheckTime, nil
+}
+
+func (r *RolloutReconciler) reconcileRolloutDisabling(rollout *v1alpha1.Rollout, newStatus *v1alpha1.RolloutStatus) (*time.Time, error) {
+	workload, err := r.finder.GetWorkloadForRef(rollout)
+	if err != nil {
+		klog.Errorf("rollout(%s/%s) get workload failed: %s", rollout.Namespace, rollout.Name, err.Error())
+		return nil, err
+	}
+	c := &RolloutContext{Rollout: rollout, NewStatus: newStatus, Workload: workload}
+	done, err := r.doFinalising(c)
+	if err != nil {
+		return nil, err
+	} else if done {
+		klog.Infof("rollout(%s/%s) is disabled", rollout.Namespace, rollout.Name)
+		newStatus.Phase = v1alpha1.RolloutPhaseDisabled
+		newStatus.Message = "Rollout is disabled"
+	} else {
+		// Incomplete, recheck
+		expectedTime := time.Now().Add(time.Duration(defaultGracePeriodSeconds) * time.Second)
+		c.RecheckTime = &expectedTime
+		klog.Infof("rollout(%s/%s) disabling is incomplete, and recheck(%s)", rollout.Namespace, rollout.Name, expectedTime.String())
+	}
+	return c.RecheckTime, nil
+}
+
+func (r *RolloutReconciler) patchWorkloadRolloutWebhookLabel(rollout *v1alpha1.Rollout) error {
+	// get ref workload
+	workload, err := r.finder.GetWorkloadForRef(rollout)
+	if err != nil {
+		klog.Errorf("rollout(%s/%s) get workload failed: %s", rollout.Namespace, rollout.Name, err.Error())
+		return err
+	} else if workload == nil {
+		return nil
+	}
+
+	var workloadType util.WorkloadType
+	switch workload.Kind {
+	case util.ControllerKruiseKindCS.Kind:
+		workloadType = util.CloneSetType
+	case util.ControllerKindDep.Kind:
+		workloadType = util.DeploymentType
+	case util.ControllerKindSts.Kind:
+		workloadType = util.StatefulSetType
+	case util.ControllerKruiseKindDS.Kind:
+		workloadType = util.DaemonSetType
+	}
+	if workload.Annotations[util.WorkloadTypeLabel] == "" && workloadType != "" {
+		workloadGVK := schema.FromAPIVersionAndKind(workload.APIVersion, workload.Kind)
+		obj := util.GetEmptyWorkloadObject(workloadGVK)
+		obj.SetNamespace(workload.Namespace)
+		obj.SetName(workload.Name)
+		body := fmt.Sprintf(`{"metadata":{"labels":{"%s":"%s"}}}`, util.WorkloadTypeLabel, workloadType)
+		if err := r.Patch(context.TODO(), obj, client.RawPatch(types.MergePatchType, []byte(body))); err != nil {
+			klog.Errorf("rollout(%s/%s) patch workload(%s) failed: %s", rollout.Namespace, rollout.Name, workload.Name, err.Error())
+			return err
+		}
+		klog.Infof("rollout(%s/%s) patch workload(%s) labels[%s] success", rollout.Namespace, rollout.Name, workload.Name, util.WorkloadTypeLabel)
+	}
+	return nil
 }
 
 // handle adding and handle finalizer logic, it turns if we should continue to reconcile
