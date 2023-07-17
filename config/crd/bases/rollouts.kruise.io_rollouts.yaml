@@ -57,6 +57,7 @@ spec:
             description: RolloutSpec defines the desired state of Rollout
             properties:
               disabled:
+                default: false
                 description: if a rollout disabled, then the rollout would not watch
                   changes of workload
                 type: boolean
@@ -286,7 +287,6 @@ spec:
                     type: boolean
                 type: object
             required:
-            - disabled
             - objectRef
             - strategy
             type: object
