@@ -57,7 +57,8 @@ type TrafficRoutingContext struct {
 	// status.CanaryStatus.PodTemplateHash
 	CanaryRevision string
 	// newStatus.canaryStatus.LastUpdateTime
-	LastUpdateTime *metav1.Time
+	LastUpdateTime   *metav1.Time
+	PatchPodMetadata *v1alpha1.PatchPodTemplateMetadata
 }
 
 // Manager responsible for adjusting network resources
@@ -286,13 +287,15 @@ func (m *Manager) FinalisingTrafficRouting(c *TrafficRoutingContext, onlyRestore
 
 // remove controller stored in controllerMap
 func (m *Manager) RemoveTrafficRoutingController(c *TrafficRoutingContext) {
-	trafficRouting := c.ObjectRef[0]
-	key := fmt.Sprintf("%s.%s", c.Key, trafficRouting.Service)
-	_, ok := ControllerMap[key].(network.NetworkProvider)
-	if !ok {
-		klog.Errorf("TrafficRouting controller does not exist: %s", key)
-	} else {
-		delete(ControllerMap, key)
+	if c.ObjectRef != nil {
+		trafficRouting := c.ObjectRef[0]
+		key := fmt.Sprintf("%s.%s", c.Key, trafficRouting.Service)
+		_, ok := ControllerMap[key].(network.NetworkProvider)
+		if !ok {
+			klog.Errorf("TrafficRouting controller does not exist: %s", key)
+		} else {
+			delete(ControllerMap, key)
+		}
 	}
 }
 
@@ -300,12 +303,13 @@ func newNetworkProvider(c client.Client, con *TrafficRoutingContext, sService, c
 	trafficRouting := con.ObjectRef[0]
 	if trafficRouting.NetworkRefs != nil {
 		return custom.NewCustomController(c, custom.Config{
-			RolloutName:   con.Key,
-			RolloutNs:     con.Namespace,
-			CanaryService: cService,
-			StableService: sService,
-			TrafficConf:   *trafficRouting.NetworkRefs,
-			OwnerRef:      con.OwnerRef,
+			RolloutName:      con.Key,
+			RolloutNs:        con.Namespace,
+			CanaryService:    cService,
+			StableService:    sService,
+			TrafficConf:      *trafficRouting.NetworkRefs,
+			OwnerRef:         con.OwnerRef,
+			PatchPodMetadata: con.PatchPodMetadata,
 		})
 	}
 	if trafficRouting.Ingress != nil {

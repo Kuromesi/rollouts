@@ -101,7 +101,7 @@ function FindMatchedRules(spec, stableService)
     return matchedRoutes
 end
 
-function FindMatchedDestination(spec, stableService)
+function FindMatchedRoutes(spec, stableService)
     local matchedDst = {}
     local rules = {}
     if (spec.http) then
@@ -156,7 +156,7 @@ function GenerateMatchedRoutes(spec, matches, stableService, canaryService, stab
             table.insert(route["match"], vsMatch)
         end
     end
-    local matchedDst = FindMatchedDestination(spec, stableService)
+    local matchedDst = FindMatchedRoutes(spec, stableService)
     route["route"] = {
         {
             destination = DeepCopy(matchedDst),

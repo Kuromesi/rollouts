@@ -26,6 +26,15 @@
 --                                     number = 80
 --                                 }
 --                             }
+--                         },
+--                         {
+--                             destination = {
+--                                 host = "reviews",
+--                                 subset = "c2",
+--                                 port = {
+--                                     number = 80
+--                                 }
+--                             }
 --                         }
 --                     }
 --                 }
@@ -64,10 +73,62 @@ function FindMatchedRules(spec, stableService)
         for _, route in ipairs(rule.route) do
             if route.destination.host == stableService then
                 table.insert(matchedRoutes, rule)
+                break
             end
         end
     end
     return matchedRoutes
+end
+
+function DeepCopy(original)
+    local copy
+    if type(original) == 'table' then
+        copy = {}
+        for key, value in pairs(original) do
+            copy[key] = DeepCopy(value)
+        end
+    else
+        copy = original
+    end
+    return copy
+end
+
+function FindMatchedRoutes(spec, stableService)
+    local matchedRoutes = {}
+    local rules = {}
+    if (spec.http) then
+        for _, http in ipairs(spec.http) do
+            table.insert(rules, http)
+        end
+    end
+    if (spec.tls) then
+        for _, tls in ipairs(spec.tls) do
+            table.insert(rules, tls)
+        end
+    end
+    if (spec.tcp) then
+        for _, tcp in ipairs(spec.tcp) do
+            table.insert(rules, tcp)
+        end
+    end
+    for _, rule in ipairs(rules) do
+        for _, route in ipairs(rule.route) do
+            if route.destination.host == stableService then
+                table.insert(matchedRoutes, route)
+            end
+        end
+    end
+    return matchedRoutes
+end
+
+function CalculateWeight(route, stableWeight, n)
+    local weight
+    if (route.weight) then
+        weight = math.floor(route.weight * stableWeight / 100)
+    else
+        weight = math.floor(stableWeight / n)
+    end
+    return weight
 end
 
 -- generate routes with matches
@@ -96,20 +157,27 @@ function GenerateMatchedRoutes(spec, matches, stableService, canaryService, stab
             table.insert(route["match"], vsMatch)
         end
     end
-    route["route"] = {
+    route.route = {
         {
-            destination = {
-                host = stableService,
-            },
-            weight = stableWeight,
-        },
-        {
-            destination = {
-                host = canaryService,
-            },
-            weight = canaryWeight,
+            destination = {}
         }
     }
+    if stableWeight ~= 0 then
+        local matchedRoutes = FindMatchedRoutes(spec, stableService)
+        for _, r in ipairs(matchedRoutes) do
+            local nRoute = DeepCopy(r)
+            nRoute.weight = CalculateWeight(nRoute, stableWeight, #matchedRoutes)
+            table.insert(route.route, nRoute)
+        end
+        route.route[1].weight = canaryWeight
+    end
+    -- if stableService == canaryService, then do e2e release
+    if stableService == canaryService then
+        route.route[1].destination.host = stableService
+        route.route[1].destination.subset = "canary"
+    else
+        route.route[1].destination.host = canaryService
+    end
     table.insert(spec.http, 1, route)
 end
 
@@ -117,19 +185,27 @@ end
 function GenerateRoutes(spec, stableService, canaryService, stableWeight, canaryWeight)
     local matchedRules = FindMatchedRules(spec, stableService)
     for _, rule in ipairs(matchedRules) do
-        local canary = {
-            destination = {
-                host = canaryService,
-            },
-            weight = canaryWeight,
-        }
+        local canary
+        if stableService ~= canaryService then
+            canary = {
+                destination = {
+                    host = canaryService,
+                },
+                weight = canaryWeight,
+            }
+        else
+            canary = {
+                destination = {
+                    host = stableService,
+                    subset = "canary",
+                },
+                weight = canaryWeight,
+            }
+        end
+        
         for _, route in ipairs(rule.route) do
             -- incase there are multiple versions traffic already
-            if (route.weight) then
-                route.weight = math.floor(route.weight * stableWeight / 100)
-            else
-                route.weight = math.floor(stableWeight / #rule.route)
-            end
+            route.weight = CalculateWeight(route, stableWeight, #rule.route)
         end
         table.insert(rule.route, canary)
     end
@@ -142,4 +218,3 @@ end
 
 GenerateRoutes(spec, obj.stableService, obj.canaryService, obj.stableWeight, obj.canaryWeight)
 return obj.data
-

@@ -59,14 +59,19 @@ type customController struct {
 	luaScript  map[string]string
 }
 
+type Revision struct {
+}
+
 type Config struct {
 	RolloutName   string
 	RolloutNs     string
 	CanaryService string
 	StableService string
 	// network providers need to be created
-	TrafficConf []rolloutv1alpha1.NetworkRef
-	OwnerRef    metav1.OwnerReference
+	TrafficConf      []rolloutv1alpha1.NetworkRef
+	OwnerRef         metav1.OwnerReference
+	PatchPodMetadata *rolloutv1alpha1.PatchPodTemplateMetadata
+	Revision         *Revision
 }
 
 func NewCustomController(client client.Client, conf Config) (network.NetworkProvider, error) {
@@ -232,20 +237,22 @@ func (r *customController) executeLuaForCanary(spec Data, strategy *rolloutv1alp
 		weight = utilpointer.Int32(-1)
 	}
 	type LuaData struct {
-		Data          Data
-		CanaryWeight  int32
-		StableWeight  int32
-		Matches       []rolloutv1alpha1.HttpRouteMatch
-		CanaryService string
-		StableService string
+		Data             Data
+		CanaryWeight     int32
+		StableWeight     int32
+		Matches          []rolloutv1alpha1.HttpRouteMatch
+		CanaryService    string
+		StableService    string
+		PatchPodMetadata *rolloutv1alpha1.PatchPodTemplateMetadata
 	}
 	data := &LuaData{
-		Data:          spec,
-		CanaryWeight:  *weight,
-		StableWeight:  100 - *weight,
-		Matches:       matches,
-		CanaryService: r.conf.CanaryService,
-		StableService: r.conf.StableService,
+		Data:             spec,
+		CanaryWeight:     *weight,
+		StableWeight:     100 - *weight,
+		Matches:          matches,
+		CanaryService:    r.conf.CanaryService,
+		StableService:    r.conf.StableService,
+		PatchPodMetadata: r.conf.PatchPodMetadata,
 	}
 
 	unObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(data)
