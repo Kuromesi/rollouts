@@ -12,3 +12,7 @@ spec:
   - route:
     - destination:
         host: nginx-service
+      weight: 50
+    - destination:
+        host: nginx-service-canary
+      weight: 50

@@ -16,6 +16,15 @@ spec:
     canary:
       steps:
       - weight: 20
+        matches:
+        - headers:
+          - type: Exact
+            name: user-agent
+            value: pc
+          - type: RegularExpression
+            name: name
+            value: ".*demo"
+      - weight: 50
       trafficRoutings:
       - service: nginx-service
         networkRefs:

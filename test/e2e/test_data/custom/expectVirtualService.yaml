@@ -9,12 +9,19 @@ spec:
   gateways:
   - nginx-gateway
   http:
-  - route:
+  - match:
+    - headers:
+        user-agent:
+          exact: pc
+        name:
+          regex: .*demo
+    route:
     - destination:
         host: nginx-service
-        port:
-          number: 80
       weight: 80
     - destination:
         host: nginx-service-canary
       weight: 20
+  - route:
+    - destination:
+        host: nginx-service

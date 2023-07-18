@@ -181,6 +181,9 @@ func (r *customController) setLuaScript(ctx context.Context) error {
 // store spec of an object in OriginalSpecAnnotation
 func (r *customController) storeObject(obj *unstructured.Unstructured) error {
 	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
 	labels := obj.GetLabels()
 	oSpec := annotations[OriginalSpecAnnotation]
 	delete(annotations, OriginalSpecAnnotation)
@@ -302,6 +305,9 @@ func (r *customController) getLuaScript(ctx context.Context, ref rolloutv1alpha1
 func cmpAndSetObject(data Data, obj *unstructured.Unstructured) bool {
 	spec := data.Spec
 	annotations := data.Annotations
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
 	annotations[OriginalSpecAnnotation] = obj.GetAnnotations()[OriginalSpecAnnotation]
 	labels := data.Labels
 	if util.DumpJSON(obj.Object["spec"]) == util.DumpJSON(spec) &&
