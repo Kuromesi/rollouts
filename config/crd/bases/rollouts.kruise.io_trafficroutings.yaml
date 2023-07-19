@@ -96,6 +96,9 @@ spec:
                             type: string
                         type: object
                       type: array
+                    onlyTrafficRouting:
+                      default: false
+                      type: boolean
                     service:
                       description: Service holds the name of a service which selects
                         pods with stable version and don't select any pods with canary

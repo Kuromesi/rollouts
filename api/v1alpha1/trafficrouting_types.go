@@ -37,6 +37,9 @@ type TrafficRoutingRef struct {
 	// Gateway configuration only supports >= v0.4.0 (v1alpha2).
 	Gateway     *GatewayTrafficRouting `json:"gateway,omitempty"`
 	NetworkRefs *[]NetworkRef          `json:"networkRefs,omitempty"`
+	// +optional
+	//+kubebuilder:default=false
+	OnlyTrafficRouting bool `json:"onlyTrafficRouting,omitempty"`
 }
 
 // IngressTrafficRouting configuration for ingress controller to control traffic routing

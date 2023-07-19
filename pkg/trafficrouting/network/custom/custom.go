@@ -119,15 +119,20 @@ func (r *customController) EnsureRoutes(ctx context.Context, strategy *rolloutv1
 			return false, err
 		}
 		specStr := obj.GetAnnotations()[OriginalSpecAnnotation]
+		if specStr == "" {
+			continue
+		}
 		var oSpec Data
 		_ = json.Unmarshal([]byte(specStr), &oSpec)
 		luaScript, ok := r.luaScript[ref.Kind]
+		// in case when rollout finalising the controller restart unexpectedly and the Initialize step is skipped
 		if !ok {
-			err = r.setLuaScript(ctx)
-			if err != nil {
-				klog.Errorf("failed to get Lua script %s when EnsureRoutes", ref.Kind)
+			script := r.getLuaScript(ctx, ref)
+			if script == "" {
+				return false, fmt.Errorf("failed to get lua script for %s", ref.Kind)
 			}
-			luaScript = r.luaScript[ref.Kind]
+			r.luaScript[ref.Kind] = script
+			luaScript = script
 		}
 		nSpec, err := r.executeLuaForCanary(oSpec, strategy, luaScript)
 		if err != nil {
@@ -163,26 +168,6 @@ func (r *customController) Finalise(ctx context.Context) error {
 	return nil
 }
 
-func (r *customController) setLuaScript(ctx context.Context) error {
-	for _, ref := range r.conf.TrafficConf {
-		obj := &unstructured.Unstructured{}
-		obj.SetAPIVersion(ref.APIVersion)
-		obj.SetKind(ref.Kind)
-		if err := r.Get(ctx, types.NamespacedName{Namespace: r.conf.RolloutNs, Name: ref.Name}, obj); err != nil {
-			return err
-		}
-		// check if lua script exists
-		if _, ok := r.luaScript[ref.Kind]; !ok {
-			script := r.getLuaScript(ctx, ref)
-			if script == "" {
-				return fmt.Errorf("failed to get lua script for %s", ref.Kind)
-			}
-			r.luaScript[ref.Kind] = script
-		}
-	}
-	return nil
-}
-
 // store spec of an object in OriginalSpecAnnotation
 func (r *customController) storeObject(obj *unstructured.Unstructured) error {
 	annotations := obj.GetAnnotations()
@@ -212,8 +197,7 @@ func (r *customController) storeObject(obj *unstructured.Unstructured) error {
 // restore an object from spec stored in OriginalSpecAnnotation
 func (r *customController) restoreObject(obj *unstructured.Unstructured) error {
 	annotations := obj.GetAnnotations()
-	if annotations[OriginalSpecAnnotation] == "" {
-		klog.Errorf("original spec not found in annotation of %s", obj.GetName())
+	if annotations == nil || annotations[OriginalSpecAnnotation] == "" {
 		return nil
 	}
 	specStr := annotations[OriginalSpecAnnotation]
