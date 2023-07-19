@@ -116,7 +116,8 @@ var (
 		Spec: v1alpha1.TrafficRoutingSpec{
 			ObjectRef: []v1alpha1.TrafficRoutingRef{
 				{
-					Service: "echoserver",
+					Service:            "echoserver",
+					OnlyTrafficRouting: true,
 					Ingress: &v1alpha1.IngressTrafficRouting{
 						Name: "echoserver",
 					},
