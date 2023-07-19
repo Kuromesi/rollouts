@@ -466,5 +466,6 @@ func newTrafficRoutingContext(c *RolloutContext) *trafficrouting.TrafficRoutingC
 		StableRevision:   c.NewStatus.CanaryStatus.StableRevision,
 		CanaryRevision:   c.NewStatus.CanaryStatus.PodTemplateHash,
 		LastUpdateTime:   c.NewStatus.CanaryStatus.LastUpdateTime,
+		PatchPodMetadata: c.Rollout.Spec.Strategy.Canary.PatchPodTemplateMetadata,
 	}
 }

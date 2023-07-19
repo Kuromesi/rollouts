@@ -23,6 +23,7 @@ import (
 
 	"github.com/openkruise/rollouts/api/v1alpha1"
 	"github.com/openkruise/rollouts/pkg/trafficrouting/network"
+	"github.com/openkruise/rollouts/pkg/trafficrouting/network/custom"
 	"github.com/openkruise/rollouts/pkg/trafficrouting/network/gateway"
 	"github.com/openkruise/rollouts/pkg/trafficrouting/network/ingress"
 	"github.com/openkruise/rollouts/pkg/util"
@@ -36,7 +37,8 @@ import (
 )
 
 var (
-	defaultGracePeriodSeconds int32 = 3
+	defaultGracePeriodSeconds int32                  = 3
+	ControllerMap             map[string]interface{} = make(map[string]interface{})
 )
 
 type TrafficRoutingContext struct {
@@ -55,7 +57,8 @@ type TrafficRoutingContext struct {
 	// status.CanaryStatus.PodTemplateHash
 	CanaryRevision string
 	// newStatus.canaryStatus.LastUpdateTime
-	LastUpdateTime *metav1.Time
+	LastUpdateTime   *metav1.Time
+	PatchPodMetadata *v1alpha1.PatchPodTemplateMetadata
 }
 
 // Manager responsible for adjusting network resources
@@ -74,21 +77,31 @@ func (m *Manager) InitializeTrafficRouting(c *TrafficRoutingContext) error {
 	if len(c.ObjectRef) == 0 {
 		return nil
 	}
-	objectRef := c.ObjectRef[0]
-	sService := objectRef.Service
-	// check service
-	service := &corev1.Service{}
-	if err := m.Get(context.TODO(), types.NamespacedName{Namespace: c.Namespace, Name: sService}, service); err != nil {
-		return err
+	for _, objectRef := range c.ObjectRef {
+		sService := objectRef.Service
+		// check service
+		service := &corev1.Service{}
+		if err := m.Get(context.TODO(), types.NamespacedName{Namespace: c.Namespace, Name: sService}, service); err != nil {
+			return err
+		}
+		cService := getCanaryServiceName(sService, objectRef.OnlyTrafficRouting)
+		// new network provider
+		key := fmt.Sprintf("%s.%s", c.Key, sService)
+		if _, ok := ControllerMap[key]; ok {
+			return nil
+		}
+		trController, err := newNetworkProvider(m.Client, c, sService, cService)
+		if err != nil {
+			klog.Errorf("%s newNetworkProvider failed: %s", c.Key, err.Error())
+			return err
+		}
+		err = trController.Initialize(context.TODO())
+		if err != nil {
+			return err
+		}
+		ControllerMap[key] = trController
 	}
-	cService := getCanaryServiceName(sService, c.OnlyTrafficRouting)
-	// new network provider, ingress or gateway
-	trController, err := newNetworkProvider(m.Client, c, sService, cService)
-	if err != nil {
-		klog.Errorf("%s newNetworkProvider failed: %s", c.Key, err.Error())
-		return err
-	}
-	return trController.Initialize(context.TODO())
+	return nil
 }
 
 func (m *Manager) DoTrafficRouting(c *TrafficRoutingContext) (bool, error) {
@@ -115,13 +128,13 @@ func (m *Manager) DoTrafficRouting(c *TrafficRoutingContext) (bool, error) {
 		return false, err
 	}
 	// canary service name
-	canaryServiceName := getCanaryServiceName(trafficRouting.Service, c.OnlyTrafficRouting)
+	canaryServiceName := getCanaryServiceName(trafficRouting.Service, trafficRouting.OnlyTrafficRouting)
 	canaryService := &corev1.Service{}
 	canaryService.Namespace = stableService.Namespace
 	canaryService.Name = canaryServiceName
 	// end-to-end canary deployment scenario(a -> b -> c), if only b or c is released,
 	//and a is not released in this scenario, then the canary service is not needed.
-	if !c.OnlyTrafficRouting {
+	if !trafficRouting.OnlyTrafficRouting {
 		if c.StableRevision == "" || c.CanaryRevision == "" {
 			klog.Warningf("%s stableRevision or podTemplateHash can not be empty, and wait a moment", c.Key)
 			return false, nil
@@ -170,11 +183,16 @@ func (m *Manager) DoTrafficRouting(c *TrafficRoutingContext) (bool, error) {
 		}
 	}
 
-	// new network provider, ingress or gateway
-	trController, err := newNetworkProvider(m.Client, c, stableService.Name, canaryService.Name)
-	if err != nil {
-		klog.Errorf("%s newNetworkProvider failed: %s", c.Key, err.Error())
-		return false, err
+	// new network provider
+	key := fmt.Sprintf("%s.%s", c.Key, trafficRouting.Service)
+	trController, ok := ControllerMap[key].(network.NetworkProvider)
+	if !ok {
+		// in case the rollout controller restart unexpectedly, create a new trafficRouting controller
+		err := m.InitializeTrafficRouting(c)
+		if err != nil {
+			return false, err
+		}
+		trController, _ = ControllerMap[key].(network.NetworkProvider)
 	}
 	verify, err := trController.EnsureRoutes(context.TODO(), &c.Strategy)
 	if err != nil {
@@ -188,6 +206,7 @@ func (m *Manager) DoTrafficRouting(c *TrafficRoutingContext) (bool, error) {
 }
 
 func (m *Manager) FinalisingTrafficRouting(c *TrafficRoutingContext, onlyRestoreStableService bool) (bool, error) {
+	var err error
 	if len(c.ObjectRef) == 0 {
 		return true, nil
 	}
@@ -196,13 +215,19 @@ func (m *Manager) FinalisingTrafficRouting(c *TrafficRoutingContext, onlyRestore
 		trafficRouting.GracePeriodSeconds = defaultGracePeriodSeconds
 	}
 
-	cServiceName := getCanaryServiceName(trafficRouting.Service, c.OnlyTrafficRouting)
-	trController, err := newNetworkProvider(m.Client, c, trafficRouting.Service, cServiceName)
-	if err != nil {
-		klog.Errorf("%s newTrafficRoutingController failed: %s", c.Key, err.Error())
-		return false, err
+	cServiceName := getCanaryServiceName(trafficRouting.Service, trafficRouting.OnlyTrafficRouting)
+	key := fmt.Sprintf("%s.%s", c.Key, trafficRouting.Service)
+	trController, ok := ControllerMap[key].(network.NetworkProvider)
+	if !ok {
+		klog.Errorf("failed to fetch newNetworkProvider: %s", key)
+		// when finalising, InitializeTrafficRouting checks are not necessary
+		trController, err = newNetworkProvider(m.Client, c, trafficRouting.Service, cServiceName)
+		if err != nil {
+			klog.Errorf("%s newTrafficRoutingController failed: %s", c.Key, err.Error())
+			return false, err
+		}
+		ControllerMap[key] = trController
 	}
-
 	cService := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: c.Namespace, Name: cServiceName}}
 	// if canary svc has been already cleaned up, just return
 	if err = m.Get(context.TODO(), client.ObjectKeyFromObject(cService), cService); err != nil {
@@ -249,7 +274,7 @@ func (m *Manager) FinalisingTrafficRouting(c *TrafficRoutingContext, onlyRestore
 	}
 	// end to end deployment, don't remove the canary service;
 	// because canary service is stable service
-	if !c.OnlyTrafficRouting {
+	if !trafficRouting.OnlyTrafficRouting {
 		// remove canary service
 		err = m.Delete(context.TODO(), cService)
 		if err != nil && !errors.IsNotFound(err) {
@@ -261,8 +286,33 @@ func (m *Manager) FinalisingTrafficRouting(c *TrafficRoutingContext, onlyRestore
 	return true, nil
 }
 
+// remove controller stored in controllerMap
+func (m *Manager) RemoveTrafficRoutingController(c *TrafficRoutingContext) {
+	if c.ObjectRef != nil {
+		trafficRouting := c.ObjectRef[0]
+		key := fmt.Sprintf("%s.%s", c.Key, trafficRouting.Service)
+		_, ok := ControllerMap[key].(network.NetworkProvider)
+		if !ok {
+			klog.Errorf("TrafficRouting controller does not exist: %s", key)
+		} else {
+			delete(ControllerMap, key)
+		}
+	}
+}
+
 func newNetworkProvider(c client.Client, con *TrafficRoutingContext, sService, cService string) (network.NetworkProvider, error) {
 	trafficRouting := con.ObjectRef[0]
+	if trafficRouting.NetworkRefs != nil {
+		return custom.NewCustomController(c, custom.Config{
+			RolloutName:      con.Key,
+			RolloutNs:        con.Namespace,
+			CanaryService:    cService,
+			StableService:    sService,
+			TrafficConf:      *trafficRouting.NetworkRefs,
+			OwnerRef:         con.OwnerRef,
+			PatchPodMetadata: con.PatchPodMetadata,
+		})
+	}
 	if trafficRouting.Ingress != nil {
 		return ingress.NewIngressTrafficRouting(c, ingress.Config{
 			Key:           con.Key,
