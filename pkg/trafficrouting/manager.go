@@ -77,31 +77,14 @@ func (m *Manager) InitializeTrafficRouting(c *TrafficRoutingContext) error {
 	if len(c.ObjectRef) == 0 {
 		return nil
 	}
-	for _, objectRef := range c.ObjectRef {
-		sService := objectRef.Service
-		// check service
-		service := &corev1.Service{}
-		if err := m.Get(context.TODO(), types.NamespacedName{Namespace: c.Namespace, Name: sService}, service); err != nil {
-			return err
-		}
-		cService := getCanaryServiceName(sService, objectRef.OnlyTrafficRouting)
-		// new network provider
-		key := fmt.Sprintf("%s.%s", c.Key, sService)
-		if _, ok := ControllerMap[key]; ok {
-			return nil
-		}
-		trController, err := newNetworkProvider(m.Client, c, sService, cService)
-		if err != nil {
-			klog.Errorf("%s newNetworkProvider failed: %s", c.Key, err.Error())
-			return err
-		}
-		err = trController.Initialize(context.TODO())
-		if err != nil {
-			return err
-		}
-		ControllerMap[key] = trController
+	objectRef := c.ObjectRef[0]
+	sService := objectRef.Service
+	// check service
+	service := &corev1.Service{}
+	if err := m.Get(context.TODO(), types.NamespacedName{Namespace: c.Namespace, Name: sService}, service); err != nil {
+		return err
 	}
-	cService := getCanaryServiceName(sService, c.OnlyTrafficRouting)
+	cService := getCanaryServiceName(sService, objectRef.OnlyTrafficRouting)
 	// new network provider
 	key := fmt.Sprintf("%s.%s", c.Key, sService)
 	if _, ok := ControllerMap[key]; ok {
