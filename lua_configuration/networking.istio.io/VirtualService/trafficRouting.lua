@@ -50,6 +50,11 @@
 
 spec = obj.data.spec
 
+if obj.canaryWeight == -1 then
+    obj.canaryWeight = 100
+    obj.stableWeight = 0
+end
+
 -- find matched route of VirtualService spec with stable svc
 function FindMatchedRules(spec, stableService)
     local matchedRoutes = {}

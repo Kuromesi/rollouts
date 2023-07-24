@@ -101,6 +101,22 @@ func (m *Manager) InitializeTrafficRouting(c *TrafficRoutingContext) error {
 		}
 		ControllerMap[key] = trController
 	}
+	cService := getCanaryServiceName(sService, c.OnlyTrafficRouting)
+	// new network provider
+	key := fmt.Sprintf("%s.%s", c.Key, sService)
+	if _, ok := ControllerMap[key]; ok {
+		return nil
+	}
+	trController, err := newNetworkProvider(m.Client, c, sService, cService)
+	if err != nil {
+		klog.Errorf("%s newNetworkProvider failed: %s", c.Key, err.Error())
+		return err
+	}
+	err = trController.Initialize(context.TODO())
+	if err != nil {
+		return err
+	}
+	ControllerMap[key] = trController
 	return nil
 }
 
@@ -215,7 +231,7 @@ func (m *Manager) FinalisingTrafficRouting(c *TrafficRoutingContext, onlyRestore
 		trafficRouting.GracePeriodSeconds = defaultGracePeriodSeconds
 	}
 
-	cServiceName := getCanaryServiceName(trafficRouting.Service, trafficRouting.OnlyTrafficRouting)
+	cServiceName := getCanaryServiceName(trafficRouting.Service, c.OnlyTrafficRouting)
 	key := fmt.Sprintf("%s.%s", c.Key, trafficRouting.Service)
 	trController, ok := ControllerMap[key].(network.NetworkProvider)
 	if !ok {
