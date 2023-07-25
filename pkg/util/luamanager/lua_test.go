@@ -28,6 +28,7 @@ import (
 	lua "github.com/yuin/gopher-lua"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilpointer "k8s.io/utils/pointer"
 	luajson "layeh.com/gopher-json"
 	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
@@ -158,12 +159,13 @@ type LuaTestCase struct {
 }
 
 type LuaData struct {
-	Data          Data
-	CanaryWeight  int32
-	StableWeight  int32
-	Matches       []rolloutv1alpha1.HttpRouteMatch
-	CanaryService string
-	StableService string
+	Data             Data
+	CanaryWeight     int32
+	StableWeight     int32
+	Matches          []rolloutv1alpha1.HttpRouteMatch
+	CanaryService    string
+	StableService    string
+	PatchPodMetadata *rolloutv1alpha1.PatchPodTemplateMetadata
 }
 
 type Data struct {
@@ -192,31 +194,38 @@ func TestLuaScript(t *testing.T) {
 		dir := filepath.Dir(path)
 		err = filepath.Walk(filepath.Join(dir, "testdata"), func(path string, info os.FileInfo, err error) error {
 			if err != nil {
-				t.Fatalf("failed to walk current path")
-				return nil
+				t.Fatalf("failed to walk current path: %s", err)
 			}
 
 			if !info.IsDir() && filepath.Ext(path) == ".yaml" || filepath.Ext(path) == ".yml" {
 				t.Logf("walking path: %s", path)
-				testCase, err := getLuaTestCase(t, path)
-				if err != nil {
-					t.Fatalf("failed to load lua test cases")
-					return err
-				}
+				testCase := getLuaTestCase(t, path)
 				rollout := testCase.Rollout
 				steps := rollout.Spec.Strategy.Canary.Steps
 				for i, step := range steps {
+					weight := step.TrafficRoutingStrategy.Weight
+					if step.TrafficRoutingStrategy.Weight == nil {
+						weight = utilpointer.Int32(-1)
+					}
+					var canaryService string
+					stableService := rollout.Spec.Strategy.Canary.TrafficRoutings[0].Service
+					if rollout.Spec.Strategy.Canary.TrafficRoutings[0].OnlyTrafficRouting {
+						canaryService = stableService
+					} else {
+						canaryService = fmt.Sprintf("%s-canary", stableService)
+					}
 					data := &LuaData{
 						Data: Data{
 							Labels:      testCase.Original.GetLabels(),
 							Annotations: testCase.Original.GetAnnotations(),
 							Spec:        testCase.Original.Object["spec"],
 						},
-						Matches:       step.TrafficRoutingStrategy.Matches,
-						CanaryWeight:  *step.TrafficRoutingStrategy.Weight,
-						StableWeight:  100 - *step.TrafficRoutingStrategy.Weight,
-						CanaryService: fmt.Sprintf("%s-canary", rollout.Spec.Strategy.Canary.TrafficRoutings[0].Service),
-						StableService: rollout.Spec.Strategy.Canary.TrafficRoutings[0].Service,
+						Matches:          step.TrafficRoutingStrategy.Matches,
+						CanaryWeight:     *weight,
+						StableWeight:     100 - *weight,
+						CanaryService:    canaryService,
+						StableService:    stableService,
+						PatchPodMetadata: rollout.Spec.Strategy.Canary.PatchPodTemplateMetadata,
 					}
 					unObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(data)
 					if err != nil {
@@ -225,21 +234,18 @@ func TestLuaScript(t *testing.T) {
 					u := &unstructured.Unstructured{Object: unObj}
 					l, err := luaManager.RunLuaScript(u, script)
 					if err != nil {
-						t.Fatalf("failed to run lua script")
-						return err
+						t.Fatalf("failed to run lua script: %s", err)
 					}
 					returnValue := l.Get(-1)
 					if returnValue.Type() == lua.LTTable {
 						jsonBytes, err := luajson.Encode(returnValue)
 						if err != nil {
 							t.Fatalf("failed to encode returnValue yo jsonBytes")
-							return err
 						}
 						var nSpec Data
 						err = json.Unmarshal(jsonBytes, &nSpec)
 						if err != nil {
 							t.Fatalf("failed to convert jsonBytes to object")
-							return err
 						}
 						eSpec := Data{
 							Spec:        testCase.Expected[i].Object["spec"],
@@ -272,17 +278,15 @@ func readScript(t *testing.T, path string) string {
 	return string(data)
 }
 
-func getLuaTestCase(t *testing.T, path string) (*TestCase, error) {
+func getLuaTestCase(t *testing.T, path string) *TestCase {
 	yamlFile, err := ioutil.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read file %s", path)
-		return nil, err
 	}
 	luaTestCase := &TestCase{}
 	err = yaml.Unmarshal(yamlFile, luaTestCase)
 	if err != nil {
 		t.Fatalf("test case %s format error", path)
-		return nil, err
 	}
-	return luaTestCase, nil
+	return luaTestCase
 }
