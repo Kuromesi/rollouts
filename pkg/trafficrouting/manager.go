@@ -19,6 +19,7 @@ package trafficrouting
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/openkruise/rollouts/api/v1alpha1"
@@ -37,8 +38,8 @@ import (
 )
 
 var (
-	defaultGracePeriodSeconds int32                  = 3
-	ControllerMap             map[string]interface{} = make(map[string]interface{})
+	defaultGracePeriodSeconds int32 = 3
+	ControllerMap             sync.Map
 )
 
 type TrafficRoutingContext struct {
@@ -87,9 +88,6 @@ func (m *Manager) InitializeTrafficRouting(c *TrafficRoutingContext) error {
 	cService := getCanaryServiceName(sService, objectRef.OnlyTrafficRouting)
 	// new network provider
 	key := fmt.Sprintf("%s.%s", c.Key, sService)
-	if _, ok := ControllerMap[key]; ok {
-		return nil
-	}
 	trController, err := newNetworkProvider(m.Client, c, sService, cService)
 	if err != nil {
 		klog.Errorf("%s newNetworkProvider failed: %s", c.Key, err.Error())
@@ -99,7 +97,7 @@ func (m *Manager) InitializeTrafficRouting(c *TrafficRoutingContext) error {
 	if err != nil {
 		return err
 	}
-	ControllerMap[key] = trController
+	ControllerMap.Store(key, trController)
 	return nil
 }
 
@@ -184,14 +182,9 @@ func (m *Manager) DoTrafficRouting(c *TrafficRoutingContext) (bool, error) {
 
 	// new network provider
 	key := fmt.Sprintf("%s.%s", c.Key, trafficRouting.Service)
-	trController, ok := ControllerMap[key].(network.NetworkProvider)
-	if !ok {
-		// in case the rollout controller restart unexpectedly, create a new trafficRouting controller
-		err := m.InitializeTrafficRouting(c)
-		if err != nil {
-			return false, err
-		}
-		trController, _ = ControllerMap[key].(network.NetworkProvider)
+	trController, err := m.getController(key, c)
+	if err != nil {
+		klog.Errorf("failed to get trafficRouting controller: %s", err)
 	}
 	verify, err := trController.EnsureRoutes(context.TODO(), &c.Strategy)
 	if err != nil {
@@ -216,16 +209,9 @@ func (m *Manager) FinalisingTrafficRouting(c *TrafficRoutingContext, onlyRestore
 
 	cServiceName := getCanaryServiceName(trafficRouting.Service, c.OnlyTrafficRouting)
 	key := fmt.Sprintf("%s.%s", c.Key, trafficRouting.Service)
-	trController, ok := ControllerMap[key].(network.NetworkProvider)
-	if !ok {
-		klog.Errorf("failed to fetch newNetworkProvider: %s", key)
-		// when finalising, InitializeTrafficRouting checks are not necessary
-		trController, err = newNetworkProvider(m.Client, c, trafficRouting.Service, cServiceName)
-		if err != nil {
-			klog.Errorf("%s newTrafficRoutingController failed: %s", c.Key, err.Error())
-			return false, err
-		}
-		ControllerMap[key] = trController
+	trController, err := m.getController(key, c)
+	if err != nil {
+		klog.Errorf("failed to get trafficRouting controller: %s", err)
 	}
 	cService := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: c.Namespace, Name: cServiceName}}
 	// if canary svc has been already cleaned up, just return
@@ -290,13 +276,26 @@ func (m *Manager) RemoveTrafficRoutingController(c *TrafficRoutingContext) {
 	if c.ObjectRef != nil {
 		trafficRouting := c.ObjectRef[0]
 		key := fmt.Sprintf("%s.%s", c.Key, trafficRouting.Service)
-		_, ok := ControllerMap[key].(network.NetworkProvider)
-		if !ok {
-			klog.Errorf("TrafficRouting controller does not exist: %s", key)
-		} else {
-			delete(ControllerMap, key)
-		}
+		ControllerMap.Delete(key)
 	}
+}
+
+func (m *Manager) getController(key string, c *TrafficRoutingContext) (network.NetworkProvider, error) {
+	val, ok := ControllerMap.Load(key)
+	var trController network.NetworkProvider
+	trafficRouting := c.ObjectRef[0]
+	cServiceName := getCanaryServiceName(trafficRouting.Service, c.OnlyTrafficRouting)
+	if !ok {
+		trController, err := newNetworkProvider(m.Client, c, trafficRouting.Service, cServiceName)
+		if err != nil {
+			klog.Errorf("%s newTrafficRoutingController failed: %s", c.Key, err.Error())
+			return trController, err
+		}
+		ControllerMap.Store(key, trController)
+	} else {
+		trController = val.(network.NetworkProvider)
+	}
+	return trController, nil
 }
 
 func newNetworkProvider(c client.Client, con *TrafficRoutingContext, sService, cService string) (network.NetworkProvider, error) {

@@ -39,63 +39,7 @@ import (
 )
 
 var (
-	scheme  *runtime.Scheme
-	luaDemo = `
-	if (obj.matches)
-	then
-		for _, match in ipairs(obj.matches) do
-			local route = {}
-			route["match"] = {}
-			for key, value in pairs(match) do
-				route["match"][key] = {}
-				for _, rule in ipairs(value) do
-					if rule["type"] == "RegularExpression"
-					then
-						matchType = "regex"
-					else
-						matchType = "exact"
-					end
-					route["match"][key][rule["name"]] = {}
-					route["match"][key][rule["name"]][matchType] = rule["value"]
-					-- table.concat(route["match"][key], { rule["name"], { matchType, value } })
-				end
-			end
-			route["route"] = {
-				{
-					destination = {
-						host = obj.stableService,
-						weight = obj.stableWeight
-					}
-				},
-				{
-					destination = {
-						host = obj.canaryService,
-						weight = obj.canaryWeight
-					}
-				}
-			}
-			table.insert(obj.spec.http, 1, route)
-		end
-		return obj
-	end
-	
-	for i, route in ipairs(obj.spec.http) do
-		for _, destination in ipairs(route.route) do
-			destination = destination.destination
-			if destination.host == obj.stableService then
-				destination.weight = obj.stableWeight
-				local canary = {
-					destination = {
-						host = obj.canaryService,
-						weight = obj.canaryWeight
-					}
-				}
-				table.insert(obj.spec.http[i].route, canary)
-			end
-		end
-	end
-	return obj.spec
-			`
+	scheme      *runtime.Scheme
 	networkDemo = `
 						{
 							"apiVersion": "networking.istio.io/v1alpha3",
@@ -275,12 +219,6 @@ func TestEnsureRoutes(t *testing.T) {
 	}{
 		{
 			name: "test1",
-			getLua: func() map[string]string {
-				luaMap := map[string]string{
-					"lua-demo": luaDemo,
-				}
-				return luaMap
-			},
 			getRoutes: func() *rolloutsv1alpha1.TrafficRoutingStrategy {
 				return &rolloutsv1alpha1.TrafficRoutingStrategy{
 					Weight: utilpointer.Int32(5),
