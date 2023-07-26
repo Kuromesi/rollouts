@@ -456,15 +456,21 @@ func newTrafficRoutingContext(c *RolloutContext) *trafficrouting.TrafficRoutingC
 	if c.Workload != nil {
 		revisionLabelKey = c.Workload.RevisionLabelKey
 	}
+	onlyTrafficRouting := false
+	if c.Rollout.Spec.Strategy.Canary.TrafficRoutings != nil {
+		onlyTrafficRouting = c.Rollout.Spec.Strategy.Canary.TrafficRoutings[0].OnlyTrafficRouting
+	}
 	return &trafficrouting.TrafficRoutingContext{
-		Key:              fmt.Sprintf("Rollout(%s/%s)", c.Rollout.Namespace, c.Rollout.Name),
-		Namespace:        c.Rollout.Namespace,
-		ObjectRef:        c.Rollout.Spec.Strategy.Canary.TrafficRoutings,
-		Strategy:         currentStep.TrafficRoutingStrategy,
-		OwnerRef:         *metav1.NewControllerRef(c.Rollout, rolloutControllerKind),
-		RevisionLabelKey: revisionLabelKey,
-		StableRevision:   c.NewStatus.CanaryStatus.StableRevision,
-		CanaryRevision:   c.NewStatus.CanaryStatus.PodTemplateHash,
-		LastUpdateTime:   c.NewStatus.CanaryStatus.LastUpdateTime,
+		Key:                fmt.Sprintf("Rollout(%s/%s)", c.Rollout.Namespace, c.Rollout.Name),
+		Namespace:          c.Rollout.Namespace,
+		ObjectRef:          c.Rollout.Spec.Strategy.Canary.TrafficRoutings,
+		Strategy:           currentStep.TrafficRoutingStrategy,
+		OwnerRef:           *metav1.NewControllerRef(c.Rollout, rolloutControllerKind),
+		RevisionLabelKey:   revisionLabelKey,
+		StableRevision:     c.NewStatus.CanaryStatus.StableRevision,
+		CanaryRevision:     c.NewStatus.CanaryStatus.PodTemplateHash,
+		LastUpdateTime:     c.NewStatus.CanaryStatus.LastUpdateTime,
+		PatchPodMetadata:   c.Rollout.Spec.Strategy.Canary.PatchPodTemplateMetadata,
+		OnlyTrafficRouting: onlyTrafficRouting,
 	}
 }
