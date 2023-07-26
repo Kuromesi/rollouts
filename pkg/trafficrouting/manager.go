@@ -283,10 +283,11 @@ func (m *Manager) RemoveTrafficRoutingController(c *TrafficRoutingContext) {
 func (m *Manager) getController(key string, c *TrafficRoutingContext) (network.NetworkProvider, error) {
 	val, ok := ControllerMap.Load(key)
 	var trController network.NetworkProvider
+	var err error
 	trafficRouting := c.ObjectRef[0]
 	cServiceName := getCanaryServiceName(trafficRouting.Service, c.OnlyTrafficRouting)
 	if !ok {
-		trController, err := newNetworkProvider(m.Client, c, trafficRouting.Service, cServiceName)
+		trController, err = newNetworkProvider(m.Client, c, trafficRouting.Service, cServiceName)
 		if err != nil {
 			klog.Errorf("%s newTrafficRoutingController failed: %s", c.Key, err.Error())
 			return trController, err
