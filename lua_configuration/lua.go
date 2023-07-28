@@ -95,10 +95,10 @@ func ObjectToTable(path string) error {
 		}
 		var canaryService string
 		stableService := rollout.Spec.Strategy.Canary.TrafficRoutings[0].Service
-		if rollout.Spec.Strategy.Canary.TrafficRoutings[0].OnlyTrafficRouting {
-			canaryService = stableService
-		} else {
+		if rollout.Spec.Strategy.Canary.TrafficRoutings[0].CreateCanaryService {
 			canaryService = fmt.Sprintf("%s-canary", stableService)
+		} else {
+			canaryService = stableService
 		}
 		data := &LuaData{
 			Data: Data{

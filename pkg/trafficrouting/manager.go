@@ -48,9 +48,9 @@ type TrafficRoutingContext struct {
 	Namespace string
 	ObjectRef []v1alpha1.TrafficRoutingRef
 	Strategy  v1alpha1.TrafficRoutingStrategy
-	// OnlyTrafficRouting
-	OnlyTrafficRouting bool
-	OwnerRef           metav1.OwnerReference
+	// create a new canary service or use the stable service
+	CreateCanaryService bool
+	OwnerRef            metav1.OwnerReference
 	// workload.RevisionLabelKey
 	RevisionLabelKey string
 	// status.CanaryStatus.StableRevision
@@ -85,7 +85,7 @@ func (m *Manager) InitializeTrafficRouting(c *TrafficRoutingContext) error {
 	if err := m.Get(context.TODO(), types.NamespacedName{Namespace: c.Namespace, Name: sService}, service); err != nil {
 		return err
 	}
-	cService := getCanaryServiceName(sService, objectRef.OnlyTrafficRouting)
+	cService := getCanaryServiceName(sService, objectRef.CreateCanaryService)
 	// new network provider
 	key := fmt.Sprintf("%s.%s", c.Key, sService)
 	trController, err := newNetworkProvider(m.Client, c, sService, cService)
@@ -125,13 +125,13 @@ func (m *Manager) DoTrafficRouting(c *TrafficRoutingContext) (bool, error) {
 		return false, err
 	}
 	// canary service name
-	canaryServiceName := getCanaryServiceName(trafficRouting.Service, trafficRouting.OnlyTrafficRouting)
+	canaryServiceName := getCanaryServiceName(trafficRouting.Service, trafficRouting.CreateCanaryService)
 	canaryService := &corev1.Service{}
 	canaryService.Namespace = stableService.Namespace
 	canaryService.Name = canaryServiceName
 	// end-to-end canary deployment scenario(a -> b -> c), if only b or c is released,
 	//and a is not released in this scenario, then the canary service is not needed.
-	if !trafficRouting.OnlyTrafficRouting {
+	if trafficRouting.CreateCanaryService {
 		if c.StableRevision == "" || c.CanaryRevision == "" {
 			klog.Warningf("%s stableRevision or podTemplateHash can not be empty, and wait a moment", c.Key)
 			return false, nil
@@ -207,7 +207,7 @@ func (m *Manager) FinalisingTrafficRouting(c *TrafficRoutingContext, onlyRestore
 		trafficRouting.GracePeriodSeconds = defaultGracePeriodSeconds
 	}
 
-	cServiceName := getCanaryServiceName(trafficRouting.Service, c.OnlyTrafficRouting)
+	cServiceName := getCanaryServiceName(trafficRouting.Service, c.CreateCanaryService)
 	key := fmt.Sprintf("%s.%s", c.Key, trafficRouting.Service)
 	trController, err := m.getController(key, c)
 	if err != nil {
@@ -259,7 +259,7 @@ func (m *Manager) FinalisingTrafficRouting(c *TrafficRoutingContext, onlyRestore
 	}
 	// end to end deployment, don't remove the canary service;
 	// because canary service is stable service
-	if !trafficRouting.OnlyTrafficRouting {
+	if trafficRouting.CreateCanaryService {
 		// remove canary service
 		err = m.Delete(context.TODO(), cService)
 		if err != nil && !errors.IsNotFound(err) {
@@ -285,7 +285,7 @@ func (m *Manager) getController(key string, c *TrafficRoutingContext) (network.N
 	var trController network.NetworkProvider
 	var err error
 	trafficRouting := c.ObjectRef[0]
-	cServiceName := getCanaryServiceName(trafficRouting.Service, c.OnlyTrafficRouting)
+	cServiceName := getCanaryServiceName(trafficRouting.Service, c.CreateCanaryService)
 	if !ok {
 		trController, err = newNetworkProvider(m.Client, c, trafficRouting.Service, cServiceName)
 		if err != nil {
@@ -399,9 +399,9 @@ func (m *Manager) restoreStableService(c *TrafficRoutingContext) (bool, error) {
 	return true, nil
 }
 
-func getCanaryServiceName(sService string, onlyTrafficRouting bool) string {
-	if onlyTrafficRouting {
-		return sService
+func getCanaryServiceName(sService string, createCanaryService bool) string {
+	if createCanaryService {
+		return fmt.Sprintf("%s-canary", sService)
 	}
-	return fmt.Sprintf("%s-canary", sService)
+	return sService
 }

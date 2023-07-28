@@ -209,7 +209,7 @@ func TestLuaScript(t *testing.T) {
 					}
 					var canaryService string
 					stableService := rollout.Spec.Strategy.Canary.TrafficRoutings[0].Service
-					if rollout.Spec.Strategy.Canary.TrafficRoutings[0].OnlyTrafficRouting {
+					if rollout.Spec.Strategy.Canary.TrafficRoutings[0].CreateCanaryService {
 						canaryService = stableService
 					} else {
 						canaryService = fmt.Sprintf("%s-canary", stableService)

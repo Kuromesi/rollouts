@@ -23,7 +23,7 @@ rollout:
               value: demo
         trafficRoutings:
         - service: mocka
-          onlyTrafficRouting: true
+          createCanaryService: false
           networkRefs:
           - apiVersion: networking.istio.io/v1alpha3
             kind: DestinationRule

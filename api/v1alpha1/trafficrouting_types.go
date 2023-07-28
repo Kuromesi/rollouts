@@ -39,7 +39,8 @@ type TrafficRoutingRef struct {
 	NetworkRefs *[]NetworkRef          `json:"networkRefs,omitempty"`
 	// +optional
 	//+kubebuilder:default=false
-	OnlyTrafficRouting bool `json:"onlyTrafficRouting,omitempty"`
+	// create a new canary service or just use the stable service
+	CreateCanaryService bool `json:"createCanaryService,omitempty"`
 }
 
 // IngressTrafficRouting configuration for ingress controller to control traffic routing
