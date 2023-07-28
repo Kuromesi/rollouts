@@ -38,7 +38,7 @@ type TrafficRoutingRef struct {
 	Gateway     *GatewayTrafficRouting `json:"gateway,omitempty"`
 	NetworkRefs *[]NetworkRef          `json:"networkRefs,omitempty"`
 	// +optional
-	//+kubebuilder:default=false
+	//+kubebuilder:default=true
 	// create a new canary service or just use the stable service
 	CreateCanaryService bool `json:"createCanaryService,omitempty"`
 }
