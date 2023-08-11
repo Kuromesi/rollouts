@@ -283,7 +283,7 @@ func (r *customController) getLuaScript(ctx context.Context, ref rolloutv1alpha1
 		klog.Errorf("failed to get configMap %s/%s", nameSpace, name)
 	} else {
 		// in format like "lua.traffic.routing.ingress.aliyun-alb"
-		key = fmt.Sprintf("%s.%s.%s", configuration.LuaTrafficRoutingIngressTypePrefix, ref.Kind, group)
+		key = fmt.Sprintf("%s.%s.%s", configuration.LuaTrafficRoutingCustomTypePrefix, ref.Kind, group)
 		if script, ok := configMap.Data[key]; ok {
 			return script
 		} else if !ok {

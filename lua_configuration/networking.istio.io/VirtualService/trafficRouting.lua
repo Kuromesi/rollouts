@@ -48,6 +48,7 @@ function DeepCopy(original)
     return copy
 end
 
+-- find routes that route traffic to stable service
 function FindMatchedRoutes(spec, stableService)
     local matchedRoutes = {}
     local rules = {}
@@ -88,9 +89,10 @@ end
 
 -- generate routes with matches
 function GenerateMatchedRoutes(spec, matches, stableService, canaryService, stableWeight, canaryWeight)
-    local route = {}
-    route["match"] = {}
     for _, match in ipairs(matches) do
+        local route = {}
+        route["match"] = {}
+
         for key, value in pairs(match) do
             local vsMatch = {}
             vsMatch[key] = {}
@@ -111,29 +113,30 @@ function GenerateMatchedRoutes(spec, matches, stableService, canaryService, stab
             end
             table.insert(route["match"], vsMatch)
         end
-    end
-    route.route = {
-        {
-            destination = {}
+        route.route = {
+            {
+                destination = {}
+            }
         }
-    }
-    if stableWeight ~= 0 then
-        local matchedRoutes = FindMatchedRoutes(spec, stableService)
-        for _, r in ipairs(matchedRoutes) do
-            local nRoute = DeepCopy(r)
-            nRoute.weight = CalculateWeight(nRoute, stableWeight, #matchedRoutes)
-            table.insert(route.route, nRoute)
+        if stableWeight ~= 0 then
+            local matchedRoutes = FindMatchedRoutes(spec, stableService)
+            -- update every matched route
+            for _, r in ipairs(matchedRoutes) do
+                local nRoute = DeepCopy(r)
+                nRoute.weight = CalculateWeight(nRoute, stableWeight, #matchedRoutes)
+                table.insert(route.route, nRoute)
+            end
+            route.route[1].weight = canaryWeight
         end
-        route.route[1].weight = canaryWeight
+        -- if stableService == canaryService, then do e2e release
+        if stableService == canaryService then
+            route.route[1].destination.host = stableService
+            route.route[1].destination.subset = "canary"
+        else
+            route.route[1].destination.host = canaryService
+        end
+        table.insert(spec.http, 1, route)
     end
-    -- if stableService == canaryService, then do e2e release
-    if stableService == canaryService then
-        route.route[1].destination.host = stableService
-        route.route[1].destination.subset = "canary"
-    else
-        route.route[1].destination.host = canaryService
-    end
-    table.insert(spec.http, 1, route)
 end
 
 -- generate routes without matches

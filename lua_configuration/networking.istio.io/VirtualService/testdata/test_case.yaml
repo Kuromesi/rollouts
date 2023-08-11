@@ -25,6 +25,23 @@ rollout:
             - type: RegularExpression
               name: name
               value: ".*demo"
+        - matches:
+          - headers:
+            - type: Exact
+              name: user-agent
+              value: pc
+            - type: RegularExpression
+              name: name
+              value: ".*demo"
+        - matches:
+          - headers:
+            - type: Exact
+              name: user-agent
+              value: pc
+          - headers:
+            - type: RegularExpression
+              name: name
+              value: ".*demo"
         - weight: 50
         trafficRoutings:
         - service: nginx-service
@@ -67,11 +84,62 @@ expected:
               regex: .*demo
         route:
         - destination:
-            host: nginx-service
-          weight: 80
-        - destination:
             host: nginx-service-canary
           weight: 20
+        - destination:
+            host: nginx-service
+          weight: 80
+      - route:
+        - destination:
+            host: nginx-service
+  - apiVersion: networking.istio.io/v1alpha3
+    kind: VirtualService
+    metadata:
+      name: nginx-vs
+      namespace: demo
+    spec:
+      hosts:
+      - "*"
+      gateways:
+      - nginx-gateway
+      http:
+      - match:
+        - headers:
+            user-agent:
+              exact: pc
+            name:
+              regex: .*demo
+        route:
+        - destination:
+            host: nginx-service-canary
+      - route:
+        - destination:
+            host: nginx-service
+  - apiVersion: networking.istio.io/v1alpha3
+    kind: VirtualService
+    metadata:
+      name: nginx-vs
+      namespace: demo
+    spec:
+      hosts:
+      - "*"
+      gateways:
+      - nginx-gateway
+      http:
+      - match:
+        - headers:
+            name:
+              regex: .*demo
+        route:
+        - destination:
+            host: nginx-service-canary
+      - match:
+        - headers:
+            user-agent:
+              exact: pc
+        route:
+        - destination:
+            host: nginx-service-canary
       - route:
         - destination:
             host: nginx-service

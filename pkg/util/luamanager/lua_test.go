@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"reflect"
 	"testing"
 
 	rolloutv1alpha1 "github.com/openkruise/rollouts/api/v1alpha1"
@@ -252,7 +251,7 @@ func TestLuaScript(t *testing.T) {
 							Annotations: testCase.Expected[i].GetAnnotations(),
 							Labels:      testCase.Expected[i].GetLabels(),
 						}
-						if reflect.DeepEqual(eSpec, nSpec) {
+						if util.DumpJSON(eSpec) != util.DumpJSON(nSpec) {
 							t.Fatalf("expect %s, but get %s", util.DumpJSON(eSpec), util.DumpJSON(nSpec))
 						}
 					}

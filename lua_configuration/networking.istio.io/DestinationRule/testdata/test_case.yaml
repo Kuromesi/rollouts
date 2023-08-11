@@ -18,7 +18,7 @@ rollout:
         - replicas: 1
           matches:
           - headers:
-            - type: Exact # or "RegularExpression"
+            - type: Exact
               name: destination
               value: demo
         trafficRoutings:
@@ -57,8 +57,8 @@ expected:
           simple: ROUND_ROBIN
       subsets:
         - labels:
-            version: canary
-          name: canary
-        - labels:
             version: base
           name: version-base
+        - labels:
+            version: canary
+          name: canary
