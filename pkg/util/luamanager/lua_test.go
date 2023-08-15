@@ -31,7 +31,6 @@ import (
 	luajson "layeh.com/gopher-json"
 	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
-	"io/ioutil"
 	"path/filepath"
 	"strings"
 
@@ -270,7 +269,7 @@ func TestLuaScript(t *testing.T) {
 }
 
 func readScript(t *testing.T, path string) string {
-	data, err := ioutil.ReadFile(filepath.Clean(path))
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		t.Fatalf("failed to read lua script")
 	}
@@ -278,7 +277,7 @@ func readScript(t *testing.T, path string) string {
 }
 
 func getLuaTestCase(t *testing.T, path string) *TestCase {
-	yamlFile, err := ioutil.ReadFile(path)
+	yamlFile, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read file %s", path)
 	}
