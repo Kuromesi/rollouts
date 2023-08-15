@@ -31,7 +31,6 @@ import (
 	luajson "layeh.com/gopher-json"
 	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
-	"io/ioutil"
 	"path/filepath"
 	"strings"
 
@@ -191,74 +190,73 @@ func TestLuaScript(t *testing.T) {
 		}
 		script := readScript(t, path)
 		dir := filepath.Dir(path)
-		err = filepath.Walk(filepath.Join(dir, "testdata"), func(path string, info os.FileInfo, err error) error {
+		testCases, original, err := getLuaTestCases(filepath.Join(dir, "testdata"))
+		if err != nil {
+			t.Fatalf("failed to get test cases: %s", err.Error())
+		}
+		for postfix, testCase := range testCases {
+			t.Logf("Testing %s", postfix)
 			if err != nil {
 				t.Fatalf("failed to walk current path: %s", err)
 			}
-
-			if !info.IsDir() && filepath.Ext(path) == ".yaml" || filepath.Ext(path) == ".yml" {
-				t.Logf("walking path: %s", path)
-				testCase := getLuaTestCase(t, path)
-				rollout := testCase.Rollout
-				steps := rollout.Spec.Strategy.Canary.Steps
-				for i, step := range steps {
-					weight := step.TrafficRoutingStrategy.Weight
-					if step.TrafficRoutingStrategy.Weight == nil {
-						weight = utilpointer.Int32(-1)
-					}
-					var canaryService string
-					stableService := rollout.Spec.Strategy.Canary.TrafficRoutings[0].Service
-					if rollout.Spec.Strategy.Canary.TrafficRoutings[0].CreateCanaryService {
-						canaryService = stableService
-					} else {
-						canaryService = fmt.Sprintf("%s-canary", stableService)
-					}
-					data := &LuaData{
-						Data: Data{
-							Labels:      testCase.Original.GetLabels(),
-							Annotations: testCase.Original.GetAnnotations(),
-							Spec:        testCase.Original.Object["spec"],
-						},
-						Matches:          step.TrafficRoutingStrategy.Matches,
-						CanaryWeight:     *weight,
-						StableWeight:     100 - *weight,
-						CanaryService:    canaryService,
-						StableService:    stableService,
-						PatchPodMetadata: rollout.Spec.Strategy.Canary.PatchPodTemplateMetadata,
-					}
-					unObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(data)
+			rollout := testCase.Rollout
+			steps := rollout.Spec.Strategy.Canary.Steps
+			for i, step := range steps {
+				weight := step.TrafficRoutingStrategy.Weight
+				if step.TrafficRoutingStrategy.Weight == nil {
+					weight = utilpointer.Int32(-1)
+				}
+				var canaryService string
+				stableService := rollout.Spec.Strategy.Canary.TrafficRoutings[0].Service
+				if rollout.Spec.Strategy.Canary.TrafficRoutings[0].CreateCanaryService {
+					canaryService = stableService
+				} else {
+					canaryService = fmt.Sprintf("%s-canary", stableService)
+				}
+				data := &LuaData{
+					Data: Data{
+						Labels:      original.GetLabels(),
+						Annotations: original.GetAnnotations(),
+						Spec:        original.Object["spec"],
+					},
+					Matches:          step.TrafficRoutingStrategy.Matches,
+					CanaryWeight:     *weight,
+					StableWeight:     100 - *weight,
+					CanaryService:    canaryService,
+					StableService:    stableService,
+					PatchPodMetadata: rollout.Spec.Strategy.Canary.PatchPodTemplateMetadata,
+				}
+				unObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(data)
+				if err != nil {
+					return err
+				}
+				u := &unstructured.Unstructured{Object: unObj}
+				l, err := luaManager.RunLuaScript(u, script)
+				if err != nil {
+					t.Fatalf("failed to run lua script: %s", err)
+				}
+				returnValue := l.Get(-1)
+				if returnValue.Type() == lua.LTTable {
+					jsonBytes, err := luajson.Encode(returnValue)
 					if err != nil {
-						return err
+						t.Fatalf("failed to encode returnValue yo jsonBytes")
 					}
-					u := &unstructured.Unstructured{Object: unObj}
-					l, err := luaManager.RunLuaScript(u, script)
+					var nSpec Data
+					err = json.Unmarshal(jsonBytes, &nSpec)
 					if err != nil {
-						t.Fatalf("failed to run lua script: %s", err)
+						t.Fatalf("failed to convert jsonBytes to object")
 					}
-					returnValue := l.Get(-1)
-					if returnValue.Type() == lua.LTTable {
-						jsonBytes, err := luajson.Encode(returnValue)
-						if err != nil {
-							t.Fatalf("failed to encode returnValue yo jsonBytes")
-						}
-						var nSpec Data
-						err = json.Unmarshal(jsonBytes, &nSpec)
-						if err != nil {
-							t.Fatalf("failed to convert jsonBytes to object")
-						}
-						eSpec := Data{
-							Spec:        testCase.Expected[i].Object["spec"],
-							Annotations: testCase.Expected[i].GetAnnotations(),
-							Labels:      testCase.Expected[i].GetLabels(),
-						}
-						if util.DumpJSON(eSpec) != util.DumpJSON(nSpec) {
-							t.Fatalf("expect %s, but get %s", util.DumpJSON(eSpec), util.DumpJSON(nSpec))
-						}
+					eSpec := Data{
+						Spec:        testCase.Expected[i].Object["spec"],
+						Annotations: testCase.Expected[i].GetAnnotations(),
+						Labels:      testCase.Expected[i].GetLabels(),
+					}
+					if util.DumpJSON(eSpec) != util.DumpJSON(nSpec) {
+						t.Fatalf("expect %s, but get %s", util.DumpJSON(eSpec), util.DumpJSON(nSpec))
 					}
 				}
 			}
-			return nil
-		})
+		}
 		if err != nil {
 			t.Fatalf("Error walking lua_configuration: %s", err.Error())
 		}
@@ -270,7 +268,7 @@ func TestLuaScript(t *testing.T) {
 }
 
 func readScript(t *testing.T, path string) string {
-	data, err := ioutil.ReadFile(filepath.Clean(path))
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		t.Fatalf("failed to read lua script")
 	}
@@ -278,7 +276,7 @@ func readScript(t *testing.T, path string) string {
 }
 
 func getLuaTestCase(t *testing.T, path string) *TestCase {
-	yamlFile, err := ioutil.ReadFile(path)
+	yamlFile, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read file %s", path)
 	}
@@ -288,4 +286,57 @@ func getLuaTestCase(t *testing.T, path string) *TestCase {
 		t.Fatalf("test case %s format error", path)
 	}
 	return luaTestCase
+}
+
+func getLuaTestCases(path string) (map[string]*TestCase, *unstructured.Unstructured, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	testCases := make(map[string]*TestCase)
+	var original *unstructured.Unstructured
+	for _, entry := range entries {
+		if entry.Name() == "original.yaml" {
+			err = getRollout(&original, filepath.Join(path, entry.Name()))
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		var testCase *TestCase
+		var ok bool
+		if strings.Contains(entry.Name(), "rollout") {
+			postfix := strings.Split(entry.Name(), "rollout_")[1]
+			if testCase, ok = testCases[postfix]; !ok {
+				testCase = &TestCase{}
+				testCases[postfix] = testCase
+			}
+			err = getRollout(&testCase.Rollout, filepath.Join(path, entry.Name()))
+			if err != nil {
+				return nil, nil, err
+			}
+		} else if strings.Contains(entry.Name(), "expected") {
+			postfix := strings.Split(entry.Name(), "expected_")[1]
+			if testCase, ok = testCases[postfix]; !ok {
+				testCase = &TestCase{}
+				testCases[postfix] = testCase
+			}
+			err = getRollout(&testCase.Expected, filepath.Join(path, entry.Name()))
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	return testCases, original, nil
+}
+
+func getRollout(object interface{}, path string) error {
+	yamlFile, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	err = yaml.Unmarshal(yamlFile, object)
+	if err != nil {
+		return err
+	}
+	return nil
 }
