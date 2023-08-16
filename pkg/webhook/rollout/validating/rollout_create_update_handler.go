@@ -194,6 +194,9 @@ func validateRolloutSpecCanaryStrategy(canary *appsv1alpha1.CanaryStrategy, fldP
 	}
 
 	errList := validateRolloutSpecCanarySteps(canary.Steps, fldPath.Child("Steps"), len(canary.TrafficRoutings) > 0)
+	if len(canary.TrafficRoutings) > 1 {
+		errList = append(errList, field.Invalid(fldPath, canary.TrafficRoutings, "Rollout currently only support single TrafficRouting."))
+	}
 	for _, traffic := range canary.TrafficRoutings {
 		errList = append(errList, validateRolloutSpecCanaryTraffic(traffic, fldPath.Child("TrafficRouting"))...)
 	}
@@ -220,8 +223,6 @@ func validateRolloutSpecCanaryTraffic(traffic appsv1alpha1.TrafficRoutingRef, fl
 			errList = append(errList, field.Invalid(fldPath.Child("Gateway"), traffic.Gateway, "TrafficRouting.Gateway must set the name of HTTPRoute or HTTPsRoute"))
 		}
 	}
-
-	// ---networkrefs check---
 
 	return errList
 }
