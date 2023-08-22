@@ -12,6 +12,9 @@ resources:
   kind: Rollout
   path: github.com/openkruise/rollouts/api/v1alpha1
   version: v1alpha1
+  webhooks:
+    conversion: true
+    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -21,4 +24,21 @@ resources:
   kind: BatchRelease
   path: github.com/openkruise/rollouts/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: kruise.io
+  group: rollouts
+  kind: TrafficRouting
+  path: github.com/openkruise/rollouts/api/v1beta1
+  plural: traffictoutings
+  version: v1beta1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: kruise.io
+  group: rollouts
+  kind: Rollout
+  path: github.com/openkruise/rollouts/api/v1beta1
+  version: v1beta1
 version: "3"

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha1
+package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -125,13 +125,11 @@ const (
 )
 
 // +genclient
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="STATUS",type="string",JSONPath=".status.phase",description="The TrafficRouting status phase"
 // +kubebuilder:printcolumn:name="MESSAGE",type="string",JSONPath=".status.message",description="The TrafficRouting canary status message"
 // +kubebuilder:printcolumn:name="AGE",type=date,JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:storageversion
-
 // TrafficRouting is the Schema for the TrafficRoutings API
 type TrafficRouting struct {
 	metav1.TypeMeta   `json:",inline"`

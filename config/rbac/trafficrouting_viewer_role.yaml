@@ -1,0 +1,20 @@
+# permissions for end users to view traffictoutings.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: trafficrouting-viewer-role
+rules:
+- apiGroups:
+  - rollouts.kruise.io
+  resources:
+  - traffictoutings
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - rollouts.kruise.io
+  resources:
+  - traffictoutings/status
+  verbs:
+  - get

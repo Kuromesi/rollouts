@@ -6,19 +6,22 @@ resources:
 - bases/rollouts.kruise.io_batchreleases.yaml
 - bases/rollouts.kruise.io_rollouthistories.yaml
 - bases/rollouts.kruise.io_trafficroutings.yaml
+# - bases/rollouts.kruise.io_traffictoutings.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
 # patches here are for enabling the conversion webhook for each CRD
-#- patches/webhook_in_rollouts.yaml
+- patches/webhook_in_rollouts.yaml
 #- patches/webhook_in_batchreleases.yaml
+#- patches/webhook_in_traffictoutings.yaml
 #+kubebuilder:scaffold:crdkustomizewebhookpatch
 
 # [CERTMANAGER] To enable webhook, uncomment all the sections with [CERTMANAGER] prefix.
 # patches here are for enabling the CA injection for each CRD
-#- patches/cainjection_in_rollouts.yaml
+# - patches/cainjection_in_rollouts.yaml
 #- patches/cainjection_in_batchreleases.yaml
+#- patches/cainjection_in_traffictoutings.yaml
 #+kubebuilder:scaffold:crdkustomizecainjectionpatch
 
 # the following config is for teaching kustomize how to do kustomization for CRDs.

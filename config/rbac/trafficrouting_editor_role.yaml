@@ -1,0 +1,24 @@
+# permissions for end users to edit traffictoutings.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: trafficrouting-editor-role
+rules:
+- apiGroups:
+  - rollouts.kruise.io
+  resources:
+  - traffictoutings
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rollouts.kruise.io
+  resources:
+  - traffictoutings/status
+  verbs:
+  - get
