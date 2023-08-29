@@ -186,13 +186,16 @@ func TestLuaScript(t *testing.T) {
 			return nil
 		}
 		if err != nil {
-			t.Fatalf("Error: %s", err.Error())
+			return err
 		}
-		script := readScript(t, path)
+		script, err := readScript(t, path)
+		if err != nil {
+			return err
+		}
 		dir := filepath.Dir(path)
 		err = filepath.Walk(filepath.Join(dir, "testdata"), func(path string, info os.FileInfo, err error) error {
 			if err != nil {
-				t.Fatalf("failed to walk current path: %s", err)
+				return err
 			}
 
 			if !info.IsDir() && filepath.Ext(path) == ".yaml" || filepath.Ext(path) == ".yml" {
@@ -232,18 +235,18 @@ func TestLuaScript(t *testing.T) {
 					u := &unstructured.Unstructured{Object: unObj}
 					l, err := luaManager.RunLuaScript(u, script)
 					if err != nil {
-						t.Fatalf("failed to run lua script: %s", err)
+						return err
 					}
 					returnValue := l.Get(-1)
 					if returnValue.Type() == lua.LTTable {
 						jsonBytes, err := luajson.Encode(returnValue)
 						if err != nil {
-							t.Fatalf("failed to encode returnValue yo jsonBytes")
+							return err
 						}
 						var nSpec Data
 						err = json.Unmarshal(jsonBytes, &nSpec)
 						if err != nil {
-							t.Fatalf("failed to convert jsonBytes to object")
+							return err
 						}
 						eSpec := Data{
 							Spec:        testCase.Expected[i].Object["spec"],
@@ -251,7 +254,7 @@ func TestLuaScript(t *testing.T) {
 							Labels:      testCase.Expected[i].GetLabels(),
 						}
 						if util.DumpJSON(eSpec) != util.DumpJSON(nSpec) {
-							t.Fatalf("expect %s, but get %s", util.DumpJSON(eSpec), util.DumpJSON(nSpec))
+							return fmt.Errorf("expect %s, but get %s", util.DumpJSON(eSpec), util.DumpJSON(nSpec))
 						}
 					}
 				}
@@ -259,21 +262,21 @@ func TestLuaScript(t *testing.T) {
 			return nil
 		})
 		if err != nil {
-			t.Fatalf("Error walking lua_configuration: %s", err.Error())
+			return err
 		}
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("Error walking lua_configuration: %s", err.Error())
+		t.Fatalf("failed to test lua scripts: %s", err.Error())
 	}
 }
 
-func readScript(t *testing.T, path string) string {
+func readScript(t *testing.T, path string) (string, error) {
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
-		t.Fatalf("failed to read lua script")
+		return "", err
 	}
-	return string(data)
+	return string(data), err
 }
 
 func getLuaTestCase(t *testing.T, path string) *TestCase {

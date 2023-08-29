@@ -59,9 +59,6 @@ type customController struct {
 	luaScript  map[string]string
 }
 
-type Revision struct {
-}
-
 type Config struct {
 	RolloutName   string
 	RolloutNs     string
@@ -71,7 +68,6 @@ type Config struct {
 	TrafficConf      []rolloutv1alpha1.NetworkRef
 	OwnerRef         metav1.OwnerReference
 	PatchPodMetadata *rolloutv1alpha1.PatchPodTemplateMetadata
-	Revision         *Revision
 }
 
 func NewCustomController(client client.Client, conf Config) (network.NetworkProvider, error) {
@@ -293,6 +289,7 @@ func (r *customController) getLuaScript(ctx context.Context, ref rolloutv1alpha1
 	return ""
 }
 
+// compare and update obj, return if the obj is updated
 func cmpAndSetObject(data Data, obj *unstructured.Unstructured) bool {
 	spec := data.Spec
 	annotations := data.Annotations

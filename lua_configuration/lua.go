@@ -40,6 +40,7 @@ type TestCase struct {
 	Expected []*unstructured.Unstructured `json:"expected,omitempty"`
 }
 
+// convert testdata to lua object for debugging
 func main() {
 	err := PathWalk()
 	if err != nil {

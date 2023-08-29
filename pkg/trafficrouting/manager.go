@@ -48,9 +48,7 @@ type TrafficRoutingContext struct {
 	Namespace string
 	ObjectRef []v1alpha1.TrafficRoutingRef
 	Strategy  v1alpha1.TrafficRoutingStrategy
-	// create a new canary service or use the stable service
-	CreateCanaryService bool
-	OwnerRef            metav1.OwnerReference
+	OwnerRef  metav1.OwnerReference
 	// workload.RevisionLabelKey
 	RevisionLabelKey string
 	// status.CanaryStatus.StableRevision
@@ -207,7 +205,7 @@ func (m *Manager) FinalisingTrafficRouting(c *TrafficRoutingContext, onlyRestore
 		trafficRouting.GracePeriodSeconds = defaultGracePeriodSeconds
 	}
 
-	cServiceName := getCanaryServiceName(trafficRouting.Service, c.CreateCanaryService)
+	cServiceName := getCanaryServiceName(trafficRouting.Service, trafficRouting.CreateCanaryService)
 	key := fmt.Sprintf("%s.%s", c.Key, trafficRouting.Service)
 	trController, err := m.getController(key, c)
 	if err != nil {
@@ -285,7 +283,7 @@ func (m *Manager) getController(key string, c *TrafficRoutingContext) (network.N
 	var trController network.NetworkProvider
 	var err error
 	trafficRouting := c.ObjectRef[0]
-	cServiceName := getCanaryServiceName(trafficRouting.Service, c.CreateCanaryService)
+	cServiceName := getCanaryServiceName(trafficRouting.Service, trafficRouting.CreateCanaryService)
 	if !ok {
 		trController, err = newNetworkProvider(m.Client, c, trafficRouting.Service, cServiceName)
 		if err != nil {
