@@ -125,8 +125,8 @@ const (
 )
 
 // +genclient
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="STATUS",type="string",JSONPath=".status.phase",description="The TrafficRouting status phase"
 // +kubebuilder:printcolumn:name="MESSAGE",type="string",JSONPath=".status.message",description="The TrafficRouting canary status message"
 // +kubebuilder:printcolumn:name="AGE",type=date,JSONPath=".metadata.creationTimestamp"
