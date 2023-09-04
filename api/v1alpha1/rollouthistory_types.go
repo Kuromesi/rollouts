@@ -125,8 +125,8 @@ const (
 )
 
 // +genclient
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // RolloutHistory is the Schema for the rollouthistories API
 type RolloutHistory struct {
