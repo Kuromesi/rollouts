@@ -31,6 +31,7 @@ import (
 	kruisev1alpha1 "github.com/openkruise/kruise-api/apps/v1alpha1"
 	kruisev1beta1 "github.com/openkruise/kruise-api/apps/v1beta1"
 	rolloutsv1alpha1 "github.com/openkruise/rollouts/api/v1alpha1"
+	rolloutsv1beta1 "github.com/openkruise/rollouts/api/v1beta1"
 	crdv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -61,6 +62,8 @@ var _ = BeforeSuite(func(done Done) {
 	rand.Seed(time.Now().UnixNano())
 	logf.SetLogger(zap.New(zap.UseDevMode(true), zap.WriteTo(GinkgoWriter)))
 	err := clientgoscheme.AddToScheme(scheme)
+	Expect(err).Should(BeNil())
+	err = rolloutsv1beta1.AddToScheme(scheme)
 	Expect(err).Should(BeNil())
 	err = rolloutsv1alpha1.AddToScheme(scheme)
 	Expect(err).Should(BeNil())
